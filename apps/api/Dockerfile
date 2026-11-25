@@ -11,12 +11,20 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY README.md ./
 RUN uv sync --frozen --no-dev
+ENV PATH="/app/.venv/bin:$PATH"
 
-RUN useradd --create-home app
+# Bake the embedding model into the image: cold starts never download it.
+RUN python -c "from fastembed import TextEmbedding; \
+TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='/app/.cache/fastembed')"
+
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY knowledge_base ./knowledge_base
+COPY scripts/start.sh ./start.sh
+
+RUN useradd --create-home app && chmod +x start.sh && chown -R app /app/.cache
 USER app
 
-ENV PATH="/app/.venv/bin:$PATH" \
-    PORT=8000
+ENV PORT=8000
 EXPOSE 8000
-# Render injects $PORT; fall back to 8000 locally. Graceful shutdown drains in-flight streams.
-CMD ["sh", "-c", "uvicorn support_agent.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --timeout-graceful-shutdown 20 --no-access-log"]
+CMD ["./start.sh"]
