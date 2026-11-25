@@ -17,6 +17,7 @@
     "gen:types": "uv run --project apps/api export-schemas && npm run gen -w @support/shared-types",
     "lint": "npm run lint -w web",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:web": "npm run test -w web",
     "build:web": "npm run build -w web"
   }
 }

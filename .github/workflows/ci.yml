@@ -50,7 +50,7 @@ jobs:
       - run: docker build -t support-agent-api apps/api
 
   web:
-    name: Web (lint, types, build)
+    name: Web (lint, types, tests, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +61,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run test:web
       - run: npm run build:web
 
   contract:
