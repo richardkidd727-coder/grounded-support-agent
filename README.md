@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 3 - agent orchestrator & streaming API.** The full architecture write-up and trade-offs land
+> Status: **Phase 4 - streaming chat UI.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -197,6 +197,34 @@ event stream is stored for the observability drawer.
 | `GET /api/sessions/{id}` | Verified customer and transcript |
 | `GET /api/sessions/{id}/turns` | Per-turn traces: events, latency, tokens, cost |
 
+## Chat UI
+
+`apps/web` is a Next.js app with one statically prerendered page. The conversation is client
+state built from the agent's event stream.
+
+* **One reducer for every source.** `lib/conversation.ts` folds events into turn state. Live
+  streams, a reloaded session (each turn's stored events are replayed) and a turn recovered after
+  a dropped connection all use the same function, so they render identically. Duplicate events
+  are ignored by `seq`, and the server's `final_text` overrides any tokens that were missed.
+* **Live steps.** Every model call, tool and judge appears as it starts, with its timing and
+  result. Fallbacks show as a failed model step, followed by the backup model. Guardrail-triggered
+  tickets are tagged *auto: low confidence*. Finished turns collapse to a one-line summary.
+* **Grounding is visible.** Badges show the guardrail decision and confidence. Escalations show
+  as a ticket card, and the sources are listed under the answer. Each turn shows time to first
+  token, tokens, models and list-price cost.
+* **Errors.** Server `error` events become a retry button that counts down `retry_after_s`. A
+  dropped stream switches the turn to *recovering* and polls the saved traces: the server always
+  finishes the turn, so the reply isn't lost. `409` (a reply is still running), `404` (session
+  expired) and `429` get specific messages.
+* **Demo controls.** The persona picker (`/api/demo/personas`) drops a ready-made opening message
+  with credentials into the composer. With `CHAOS_ENABLED=true` a header menu sends `X-Chaos`
+  presets: model rate-limited, refund tool timeout, knowledge base down, all models down.
+* **Wake-up.** The page pings `/healthz` on load, which wakes a sleeping free-tier API. Session
+  creation also retries until the host is up.
+
+Model output is rendered with `react-markdown`, without raw HTML. The SSE reader is a small
+`fetch`-based parser (`lib/sse.ts`), because `EventSource` cannot POST.
+
 ## Local development
 
 Prerequisites: Docker, Node 24+, [uv](https://docs.astral.sh/uv/).
@@ -220,6 +248,6 @@ Checks (same as CI):
 
 ```bash
 cd apps/api && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
-npm run lint && npm run typecheck && npm run build:web
+npm run lint && npm run typecheck && npm run test:web && npm run build:web
 npm run gen:types && git diff --exit-code packages/shared-types
 ```
