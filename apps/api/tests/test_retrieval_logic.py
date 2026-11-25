@@ -2,7 +2,6 @@ import math
 
 import pytest
 
-from support_agent.api.kb import gate_band
 from support_agent.config import Settings
 from support_agent.domain import Tier, allowed_audiences
 from support_agent.rag.embeddings import HashingEmbedder, to_pgvector
@@ -14,6 +13,7 @@ from support_agent.rag.evaluation import (
     summarise,
     sweep_thresholds,
 )
+from support_agent.rag.gate import gate_band
 from support_agent.rag.retriever import RetrievedChunk, fuse, reciprocal_rank_fusion
 from support_agent.rag.store import CandidateRow
 

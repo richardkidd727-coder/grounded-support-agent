@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # --- protection --------------------------------------------------------------
     rate_limit_per_minute: int = 20
     chaos_enabled: bool = False
+    # Exposes the demo persona picker (fake customers, incl. their verification details).
+    demo_mode: bool = True
 
     @property
     def cors_origin_list(self) -> list[str]:

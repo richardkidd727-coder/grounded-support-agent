@@ -8,13 +8,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from support_agent import __version__
-from support_agent.api import health, kb
+from support_agent.api import demo, health, kb
 from support_agent.api.middleware import REQUEST_ID_HEADER, request_context
 from support_agent.config import Settings, get_settings
 from support_agent.db import Database
 from support_agent.logs import configure_logging, get_logger
 from support_agent.rag.embeddings import Embedder, FastEmbedEmbedder
 from support_agent.rag.factory import build_embedder, build_retriever
+from support_agent.tools.base import ToolDeps
+from support_agent.tools.registry import build_executor
 
 log = get_logger("app")
 
@@ -35,6 +37,8 @@ def create_app(
         app.state.db = db or Database(settings.database_url)
         app.state.embedder = embedder or build_embedder(settings)
         app.state.retriever = build_retriever(settings, app.state.db, app.state.embedder)
+        app.state.tool_deps = ToolDeps(app.state.db, app.state.retriever, settings)
+        app.state.tools = build_executor()
 
         warm_up: asyncio.Task[None] | None = None
         if isinstance(app.state.embedder, FastEmbedEmbedder):
@@ -60,6 +64,8 @@ def create_app(
     app.middleware("http")(request_context)
     app.include_router(health.router)
     app.include_router(kb.router)
+    if settings.demo_mode:
+        app.include_router(demo.router)
     return app
 
 
