@@ -1,0 +1,17 @@
+{
+  "name": "cs-ai-project",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "dev:api": "uv run --project apps/api uvicorn support_agent.main:app --reload --port 8000 --app-dir apps/api/src",
+    "db:up": "docker compose up -d db",
+    "gen:types": "uv run --project apps/api export-schemas && npm run gen -w @support/shared-types",
+    "lint": "npm run lint -w web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:web": "npm run build -w web"
+  }
+}

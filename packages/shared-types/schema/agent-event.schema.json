@@ -1,0 +1,709 @@
+{
+  "$defs": {
+    "Citation": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "type": "string"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number"
+        },
+        "section_path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "doc_id",
+        "title",
+        "section_path",
+        "score"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "rate_limited",
+        "quota_exhausted",
+        "llm_timeout",
+        "upstream_unavailable",
+        "tool_failed",
+        "invalid_request",
+        "internal"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "description": "Safe to show to the end user.",
+          "type": "string"
+        },
+        "retry_after_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "code",
+        "message",
+        "retryable",
+        "retry_after_s"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "Escalated": {
+      "additionalProperties": false,
+      "properties": {
+        "priority": {
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "urgent"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "ticket_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "escalated",
+          "default": "escalated",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "ticket_id",
+        "reason",
+        "priority"
+      ],
+      "title": "Escalated",
+      "type": "object"
+    },
+    "GuardrailResult": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "decision": {
+          "enum": [
+            "answer",
+            "escalate"
+          ],
+          "type": "string"
+        },
+        "grounding_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Judge score, if it ran."
+        },
+        "policy_ok": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "retrieval_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top hybrid score, if RAG ran."
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "guardrail.result",
+          "default": "guardrail.result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "retrieval_score",
+        "grounding_score",
+        "policy_ok",
+        "confidence",
+        "decision",
+        "reasons"
+      ],
+      "title": "GuardrailResult",
+      "type": "object"
+    },
+    "LlmCallUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "cached_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cost_usd_actual": {
+          "description": "What we actually paid (0 on free tiers).",
+          "minimum": 0,
+          "type": "number"
+        },
+        "cost_usd_list_price": {
+          "description": "Estimate at paid list prices.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "input_tokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "enum": [
+            "gemini",
+            "groq",
+            "fake"
+          ],
+          "type": "string"
+        },
+        "purpose": {
+          "enum": [
+            "agent",
+            "judge",
+            "voice"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "purpose",
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens",
+        "latency_ms",
+        "cost_usd_list_price",
+        "cost_usd_actual"
+      ],
+      "title": "LlmCallUsage",
+      "type": "object"
+    },
+    "StepCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output_preview": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "step_id": {
+          "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "step.completed",
+          "default": "step.completed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "step_id",
+        "kind",
+        "name",
+        "status",
+        "duration_ms",
+        "summary",
+        "output_preview"
+      ],
+      "title": "StepCompleted",
+      "type": "object"
+    },
+    "StepKind": {
+      "enum": [
+        "llm",
+        "tool",
+        "retrieval",
+        "guardrail"
+      ],
+      "title": "StepKind",
+      "type": "string"
+    },
+    "StepStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "input_preview": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "label": {
+          "description": "Human status line, e.g. \"Verifying account tier...\"",
+          "type": "string"
+        },
+        "name": {
+          "description": "Machine name, e.g. the tool name.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "step_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "step.started",
+          "default": "step.started",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "step_id",
+        "kind",
+        "name",
+        "label",
+        "input_preview"
+      ],
+      "title": "StepStarted",
+      "type": "object"
+    },
+    "TokenDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "token",
+          "default": "token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "text"
+      ],
+      "title": "TokenDelta",
+      "type": "object"
+    },
+    "TurnCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "type": "array"
+        },
+        "final_text": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "answered",
+            "escalated",
+            "degraded"
+          ],
+          "type": "string"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.completed",
+          "default": "turn.completed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "final_text",
+        "citations",
+        "outcome"
+      ],
+      "title": "TurnCompleted",
+      "type": "object"
+    },
+    "TurnMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "llm_calls": {
+          "items": {
+            "$ref": "#/$defs/LlmCallUsage"
+          },
+          "type": "array"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "total_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ttft_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Time to first token."
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "metrics",
+          "default": "metrics",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "ttft_ms",
+        "total_ms",
+        "llm_calls"
+      ],
+      "title": "TurnMetrics",
+      "type": "object"
+    },
+    "TurnStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "chat",
+            "voice"
+          ],
+          "type": "string"
+        },
+        "seq": {
+          "description": "Monotonic per turn; lets clients detect gaps/reorders.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.started",
+          "default": "turn.started",
+          "type": "string"
+        },
+        "user_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "turn_id",
+        "seq",
+        "ts",
+        "type",
+        "mode",
+        "user_text"
+      ],
+      "title": "TurnStarted",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "error": "#/$defs/ErrorEvent",
+      "escalated": "#/$defs/Escalated",
+      "guardrail.result": "#/$defs/GuardrailResult",
+      "metrics": "#/$defs/TurnMetrics",
+      "step.completed": "#/$defs/StepCompleted",
+      "step.started": "#/$defs/StepStarted",
+      "token": "#/$defs/TokenDelta",
+      "turn.completed": "#/$defs/TurnCompleted",
+      "turn.started": "#/$defs/TurnStarted"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TurnStarted"
+    },
+    {
+      "$ref": "#/$defs/StepStarted"
+    },
+    {
+      "$ref": "#/$defs/StepCompleted"
+    },
+    {
+      "$ref": "#/$defs/TokenDelta"
+    },
+    {
+      "$ref": "#/$defs/GuardrailResult"
+    },
+    {
+      "$ref": "#/$defs/Escalated"
+    },
+    {
+      "$ref": "#/$defs/TurnMetrics"
+    },
+    {
+      "$ref": "#/$defs/TurnCompleted"
+    },
+    {
+      "$ref": "#/$defs/ErrorEvent"
+    }
+  ],
+  "title": "AgentEvent"
+}
