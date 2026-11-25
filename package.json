@@ -13,6 +13,7 @@
     "db:seed": "uv run --directory apps/api seed",
     "kb:ingest": "uv run --directory apps/api ingest",
     "kb:eval": "uv run --directory apps/api eval-retrieval",
+    "agent:chat": "uv run --directory apps/api agent-chat",
     "gen:types": "uv run --project apps/api export-schemas && npm run gen -w @support/shared-types",
     "lint": "npm run lint -w web",
     "typecheck": "npm run typecheck --workspaces --if-present",

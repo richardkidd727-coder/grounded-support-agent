@@ -113,7 +113,6 @@ async def test_verification_locks_after_three_failures(crm: Database, tools: Too
     "args",
     [
         {"email": "a@b.example"},  # no second factor
-        {"email": "a@b.example", "card_last4": "4242", "invoice_id": "INV-2026-10231"},  # both
         {"email": "a@b.example", "card_last4": "42"},
         {"email": "not-an-email", "card_last4": "4242"},
     ],
@@ -123,6 +122,34 @@ async def test_verify_argument_validation(
 ) -> None:
     out = await tools.execute("verify_identity", args, make_ctx(crm))
     assert out.error and out.error.kind is ErrorKind.INVALID_ARGUMENTS
+
+
+async def test_both_factors_given_must_both_match(crm: Database, tools: ToolExecutor) -> None:
+    ctx = make_ctx(crm)
+    wrong_invoice = output(
+        await tools.execute(
+            "verify_identity",
+            {
+                "email": "alice@northpeak.example",
+                "card_last4": "4242",  # right
+                "invoice_id": "INV-2026-10107",  # someone else's
+            },
+            ctx,
+        )
+    )
+    assert not wrong_invoice["verified"]
+    both_right = output(
+        await tools.execute(
+            "verify_identity",
+            {
+                "email": "alice@northpeak.example",
+                "card_last4": "4242",
+                "invoice_id": "INV\u20112026\u201110231",  # typeset dashes are normalised
+            },
+            ctx,
+        )
+    )
+    assert both_right["verified"]
 
 
 # --- get_account_profile -------------------------------------------------------------------------

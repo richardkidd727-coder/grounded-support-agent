@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 2 - mock CRM & tools.** The full architecture write-up and trade-offs land
+> Status: **Phase 3 - agent orchestrator & streaming API.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -27,7 +27,8 @@ voice and the observability drawer all consume it. TypeScript types are generate
 
 | Concern | Choice |
 |---|---|
-| Agent LLM | Gemini (Google AI Studio free tier), Groq as rate-limit fallback |
+| Agent LLM | Groq free tier: `gpt-oss-120b`, falling back to `qwen3.8-27b` (Gemini plugs in by config) |
+| Grounding judge | Groq `gpt-oss-20b` (JSON verdicts only) |
 | Voice | Gemini Live API (native audio, browser connects with an ephemeral token) |
 | Embeddings | `fastembed` running locally (`bge-small-en-v1.5`), no key |
 | Database / vectors | Postgres + pgvector (Docker locally, Neon when deployed) |
@@ -67,7 +68,7 @@ answerable, 12 out of scope, including near-misses like "refund my gym membershi
 The ranges overlap, so no single similarity threshold is safe. The gate therefore has three bands:
 below **0.58** reject without calling an LLM (no answerable query scored lower), at or above
 **0.70** proceed (no out-of-scope query scored higher), and in between hand the decision to the
-grounding judge (Phase 3). The bge query instruction was measured, not assumed: it halves the share
+grounding judge (see [Agent loop](#agent-loop)). The bge query instruction was measured, not assumed: it halves the share
 of answerable questions that need the judge (23% vs 47%).
 
 ## Tools & policy enforcement
@@ -105,12 +106,103 @@ an approved refund, an annual refund needing approval, Enterprise credits, an ex
 a Free accidental upgrade, the goodwill limit, a suspended account and an out-of-window charge.
 Dates are relative to seed time and the container re-seeds on boot, so the scenarios never go stale.
 
+## Agent loop
+
+```
+customer message ──> model ──tool calls──> executor (validate · identity check · timeout · retry)
+                      ^                       │  search_policies ──> confidence gate (+ judge)
+                      └──── tool results ─────┘  create_escalation_ticket ──> `escalated` event
+                 model answers without tools ──> tokens stream to the client
+```
+
+`agent/orchestrator.py` runs one turn as a loop of model calls and tool calls (at most 8 model
+calls) and emits every step on the event protocol: `step.started` / `step.completed` for each
+model call, tool and judge, `token` deltas, `guardrail.result`, `escalated`, `metrics` and
+exactly one `turn.completed`.
+
+**Grounding is enforced in code, not requested in the prompt.** After every `search_policies`
+call the orchestrator applies the three-band gate. In the uncertain band it asks the judge model
+whether the excerpts actually answer the question, *before* the agent writes anything, so an
+unsupported answer is never streamed and then retracted. If the gate fails (reject, judge says
+no, or the judge is unavailable, which fails closed):
+
+* the excerpts are withheld, so the model cannot paraphrase a weak match into a confident answer;
+* the orchestrator opens the escalation ticket itself, as a visible step, and the model only
+  gets the real ticket id to relay.
+
+That second rule exists because of a live test. A small fallback model, told "please escalate",
+replied with a ticket number it had invented. Small models now only act as the judge.
+
+**Least privilege for the model.** Account tools (`get_account_profile`, `issue_refund`,
+`update_account_field`) are not offered until the session is verified. The executor would refuse
+them anyway; hiding them also saves ~700 prompt tokens per call. Chunk and document ids are
+stripped from excerpts (the model cited them as `【refund-policy:001】`), and citations are
+attached to `turn.completed` from the retrieval metadata instead.
+
+### Free-tier model routing
+
+Groq's free tier allows ~8k tokens per minute *per model*, and one tool-using turn sends 2-4 model
+calls of ~1.5-2.5k tokens each. `llm/router.py` treats the chain as a pool:
+
+* **Skip before a 429, not after.** The client reads `x-ratelimit-remaining-tokens` from every
+  response and models the bucket's linear refill; a request that will not fit goes straight to the
+  next model. A 429 costs ~1s, so this is visible in time to first token.
+* **Fall back** on 429, quota, timeouts, 5xx, connection failures and malformed tool calls; the
+  failed attempt shows up in the trace as a failed LLM step. A connection that never opened is
+  retried once first (nothing was sent, so it is always safe).
+* **Shared cooldowns.** Quotas are per API key, so one session's 429 spares every other session.
+* **Wait or fail fast.** If every model is busy for up to 12s the router waits; otherwise the
+  turn ends with an error carrying `retry_after_s`.
+* **Never splice answers.** Once tokens have reached the user, a failure ends the turn honestly
+  instead of continuing in a different model's voice.
+
+All providers are reached through one OpenAI-compatible streaming client (`llm/openai_compat.py`),
+so Gemini is a config change: `AGENT_LLM_CHAIN=gemini:gemini-2.5-flash,groq:openai/gpt-oss-120b`.
+
+### Error recovery
+
+| Failure | What happens |
+|---|---|
+| Tool timeout / 5xx / 429 | Retried with backoff (idempotency keys make refunds and tickets safe to retry); then the model is told to apologise and offer a ticket |
+| Bad tool arguments, invalid JSON | Returned to the model as a structured error it can correct |
+| Model rate-limited / down | Next model in the chain; the switch is visible in the trace |
+| Every model down | `error` event (`quota_exhausted` / `llm_timeout` / `upstream_unavailable`) plus an honest reply that **restates anything already done** ("a refund of $100.00 was approved (re_...)") |
+| Model loops on tools | Stopped after 8 model calls with an honest reply |
+| Bug in the agent | `error` event (`internal`); the stream still ends with `turn.completed` |
+| Browser disconnects mid-turn | The turn runs in its own task, finishes and is saved; the client can reload the session |
+
+`CHAOS_ENABLED=true` lets a request inject any of these with an `X-Chaos` header, e.g.
+`llm:rate_limit:once, issue_refund:timeout:once`.
+
+### Memory and sessions
+
+A session (Postgres: `chat_sessions`, `chat_messages`, `agent_turns`) holds two kinds of memory:
+
+* **Structured state.** The verified customer and their tier are restated in the system prompt
+  every turn, so they never scroll out of the context window.
+* **Conversation.** The most recent turns that fit a 2,500-token budget. The previous turn keeps
+  its tool calls and results; older turns keep only what was said.
+
+Chat and voice turns are written to the same history with their `mode`, so a customer can switch
+channels mid-conversation. Session ids are 144-bit bearer tokens that expire after 24h of
+inactivity. Each session runs one turn at a time (a second message gets 409). Every turn's full
+event stream is stored for the observability drawer.
+
+### API
+
+| Endpoint | |
+|---|---|
+| `POST /api/sessions` | Start a conversation and get back a `session_id` |
+| `POST /api/chat/stream` | `{session_id, message, mode}` returns `text/event-stream` (`id:` = seq, `event:` = type, `data:` = JSON); keep-alive comments every 15s |
+| `GET /api/sessions/{id}` | Verified customer and transcript |
+| `GET /api/sessions/{id}/turns` | Per-turn traces: events, latency, tokens, cost |
+
 ## Local development
 
 Prerequisites: Docker, Node 24+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-cp .env.example .env          # no keys needed until Phase 3
+cp .env.example .env          # add GROQ_API_KEY (free) for agent turns
 npm install                   # web + shared-types workspaces
 (cd apps/api && uv sync)      # Python deps
 
@@ -119,7 +211,8 @@ npm run db:migrate            # create tables + indexes
 npm run db:seed               # load the demo customers (re-run any time to reset)
 npm run kb:ingest             # chunk + embed + index (first run downloads the model, ~130 MB)
 npm run kb:eval               # optional: retrieval metrics + gate calibration
-npm run dev:api               # http://localhost:8000  (/healthz, /readyz, /docs, /api/kb/search)
+npm run agent:chat -- "hi, I need a refund"   # talk to the agent in the terminal (real models)
+npm run dev:api               # http://localhost:8000  (/docs, /readyz, /api/chat/stream, ...)
 npm run dev:web               # http://localhost:3000
 ```
 

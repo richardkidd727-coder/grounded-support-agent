@@ -8,16 +8,22 @@ Enabled only when `CHAOS_ENABLED=true`. A request opts in with a plan such as
 * persistence: ``once`` (first attempt fails, the retry succeeds - shows recovery) or
   ``always`` (every attempt fails - shows graceful degradation). Default ``always``.
 * ``*`` targets every tool.
+* ``llm`` targets the agent's model calls (``llm:rate_limit:once`` shows provider fallback). It is
+  never matched by ``*``. ``once`` fails the first model attempt of the turn's first model call;
+  ``always`` fails every attempt (shows graceful degradation).
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from support_agent.llm.types import LlmError, LlmErrorKind
 from support_agent.tools.base import ErrorKind, ToolError
+
+LLM_TARGET = "llm"
 
 Fault = Literal["timeout", "error", "rate_limit"]
 Persistence = Literal["once", "always"]
@@ -59,9 +65,29 @@ class ChaosPlan:
         else:
             raise ToolError(ErrorKind.UPSTREAM, "[chaos] upstream service returned 503")
 
+    async def inject_llm(self, attempt: int) -> None:
+        """Fault hook for `LlmRouter.stream`: fail a model attempt without calling the provider."""
+        rule = self.rules.get(LLM_TARGET)
+        if rule is None or (rule.persistence == "once" and attempt > 1):
+            return
+        kind = {
+            "timeout": LlmErrorKind.TIMEOUT,
+            "rate_limit": LlmErrorKind.RATE_LIMITED,
+            "error": LlmErrorKind.UNAVAILABLE,
+        }[rule.fault]
+        # retry_after 0: an injected 429 must not put a real model on cooldown for other users
+        raise LlmError(kind, f"[chaos] injected {rule.fault}", retry_after_s=0.0)
+
+    def llm_fault_for_step(self, step: int) -> Callable[[int], Awaitable[None]] | None:
+        """Fault hook for the turn's `step`-th model call, or None if it should run clean."""
+        rule = self.rules.get(LLM_TARGET)
+        if rule is None or (rule.persistence == "once" and step > 0):
+            return None
+        return self.inject_llm
+
     @classmethod
     def parse(cls, spec: str, known_tools: Iterable[str]) -> ChaosPlan:
-        known = {*known_tools, "*"}
+        known = {*known_tools, "*", LLM_TARGET}
         rules: dict[str, ChaosRule] = {}
         for raw in spec.split(","):
             part = raw.strip()

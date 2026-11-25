@@ -13,6 +13,8 @@ from sqlalchemy import text
 
 from support_agent.config import API_ROOT, Settings, get_settings
 from support_agent.db import Database
+from support_agent.llm.fake import FakeLlm
+from support_agent.llm.router import LlmRouter
 from support_agent.main import create_app
 from support_agent.rag.embeddings import HashingEmbedder
 
@@ -42,7 +44,10 @@ def fake_db() -> FakeDatabase:
 
 @pytest.fixture
 def client(settings: Settings, fake_db: FakeDatabase) -> Iterator[TestClient]:
-    with TestClient(create_app(settings, db=fake_db, embedder=HashingEmbedder())) as c:
+    app = create_app(
+        settings, db=fake_db, embedder=HashingEmbedder(), agent_llm=LlmRouter([FakeLlm([])])
+    )
+    with TestClient(app) as c:
         yield c
 
 
