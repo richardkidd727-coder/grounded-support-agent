@@ -4,15 +4,26 @@ from __future__ import annotations
 
 import secrets
 from datetime import timedelta
-from typing import Self
+from typing import Annotated, Any, Self
 
-from pydantic import Field, model_validator
+from pydantic import BeforeValidator, Field, StringConstraints, model_validator
 
 from support_agent.crm import repository as repo
 from support_agent.crm.policy import MAX_VERIFICATION_ATTEMPTS
 from support_agent.tools.base import ErrorKind, Tool, ToolContext, ToolError, ToolInput, ToolOutput
 
 INVOICE_ID_PATTERN = r"(?i)^INV-\d{4}-\d{5}$"
+# Models like to typeset ids with non-breaking or en dashes; customers paste them back.
+_DASHES = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2014\u2212"), "-")
+
+
+def normalize_invoice_id(value: Any) -> Any:
+    return value.translate(_DASHES).strip().upper() if isinstance(value, str) else value
+
+
+InvoiceId = Annotated[
+    str, BeforeValidator(normalize_invoice_id), StringConstraints(pattern=INVOICE_ID_PATTERN)
+]
 
 
 class VerifyIdentityInput(ToolInput):
@@ -25,16 +36,15 @@ class VerifyIdentityInput(ToolInput):
     card_last4: str | None = Field(
         default=None, pattern=r"^\d{4}$", description="Last 4 digits of the card on file."
     )
-    invoice_id: str | None = Field(
+    invoice_id: InvoiceId | None = Field(
         default=None,
-        pattern=INVOICE_ID_PATTERN,
-        description="An invoice number from the last 12 months, e.g. INV-2026-10231.",
+        description="An invoice number from the last 12 months (format INV-YYYY-NNNNN).",
     )
 
     @model_validator(mode="after")
-    def _exactly_one_factor(self) -> Self:
-        if (self.card_last4 is None) == (self.invoice_id is None):
-            raise ValueError("provide exactly one of card_last4 or invoice_id")
+    def _at_least_one_factor(self) -> Self:
+        if self.card_last4 is None and self.invoice_id is None:
+            raise ValueError("provide card_last4 or invoice_id (or both)")
         return self
 
 
@@ -50,11 +60,11 @@ class VerifyIdentity(Tool[VerifyIdentityInput, VerifyIdentityOutput]):
     label = "Verifying identity..."
     description = (
         "Verify who the customer is. Required before discussing account details, looking up the "
-        "account, issuing refunds or changing account fields. Needs the sign-in email plus ONE "
-        "second factor: the last 4 digits of the card on file, or an invoice number from the last "
-        "12 months. Never ask for full card numbers, passwords or 2FA codes. After 3 failed "
-        "attempts verification is locked and you must create an escalation ticket "
-        "(category security)."
+        "account, issuing refunds or changing account fields. Needs the sign-in email plus a "
+        "second factor: the last 4 digits of the card on file and/or an invoice number from the "
+        "last 12 months (every factor given must match). Never ask for full card numbers, "
+        "passwords or 2FA codes. After 3 failed attempts verification is locked and you must "
+        "create an escalation ticket (category security)."
     )
     input_model = VerifyIdentityInput
     output_model = VerifyIdentityOutput
@@ -73,11 +83,13 @@ class VerifyIdentity(Tool[VerifyIdentityInput, VerifyIdentityOutput]):
             customer = await repo.find_customer_by_email(conn, args.email)
             matched = False
             if customer is not None:
+                # Every factor supplied must match: giving more can only make it stricter.
+                matched = True
                 if args.card_last4 is not None:
                     matched = customer.card_last4 is not None and secrets.compare_digest(
                         customer.card_last4, args.card_last4
                     )
-                elif args.invoice_id is not None:
+                if matched and args.invoice_id is not None:
                     matched = await repo.invoice_belongs_to(
                         conn, args.invoice_id, customer.id, since=now - timedelta(days=365)
                     )

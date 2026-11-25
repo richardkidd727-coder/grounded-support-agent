@@ -30,13 +30,29 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://support:support@localhost:55432/support"
 
     # --- LLM providers (free tiers) ------------------------------------------
-    # Model ids are config, not code: confirm the current free models in AI Studio / Groq console.
+    # Model ids are config, not code: confirm the current free models in the Groq console / AI
+    # Studio. A chain is an ordered fallback list of `provider:model`; each model has its own
+    # free-tier quota, so falling back to the next one also spreads load across buckets.
     gemini_api_key: SecretStr | None = None
-    gemini_chat_model: str = "gemini-2.5-flash"
-    gemini_judge_model: str = "gemini-2.5-flash-lite"
-    gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     groq_api_key: SecretStr | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    # gpt-oss-20b is judge-only: as an agent it was seen inventing a ticket id instead of calling
+    # the tool. Small models are fine for narrow JSON verdicts, not for multi-step tool use.
+    agent_llm_chain: str = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b"
+    judge_llm_chain: str = "groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b"
+    gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
+    llm_read_timeout_s: float = 20.0  # max silence between streamed chunks (incl. first token)
+    llm_total_timeout_s: float = 45.0  # one model call, end to end
+    # Wait up to this long for a rate-limited model to free up, else fail fast with Retry-After.
+    # Generous because free-tier per-minute buckets refill within seconds.
+    llm_max_cooldown_wait_s: float = 12.0
+    # Free tiers bill nothing; metrics still report cost at list price for capacity planning.
+    llm_billing: Literal["free", "paid"] = "free"
+
+    # --- agent -------------------------------------------------------------------
+    agent_max_steps: int = 8  # model calls per turn before giving up (loop guard)
+    agent_max_output_tokens: int = 1024
+    history_token_budget: int = 2500  # prior conversation sent to the model, newest first
+    session_ttl_hours: int = 24
 
     # --- RAG -------------------------------------------------------------------
     embedding_model: str = "BAAI/bge-small-en-v1.5"

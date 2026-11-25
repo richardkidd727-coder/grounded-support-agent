@@ -18,7 +18,8 @@ class SearchPoliciesInput(ToolInput):
 
 class PolicyExcerpt(ToolOutput):
     chunk_id: str
-    section: str
+    doc_id: str
+    section: str  # breadcrumb, starts with the document title
     content: str
     similarity: float
 
@@ -68,6 +69,7 @@ class SearchPolicies(Tool[SearchPoliciesInput, SearchPoliciesOutput]):
             else [
                 PolicyExcerpt(
                     chunk_id=c.chunk_id,
+                    doc_id=c.doc_id,
                     section=c.section_path,
                     content=c.content,
                     similarity=round(c.similarity, 3),

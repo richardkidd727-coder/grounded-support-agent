@@ -11,11 +11,11 @@ from support_agent.crm import repository as repo
 from support_agent.crm.models import RefundReason, cents_to_dollars, dollars_to_cents
 from support_agent.crm.policy import evaluate_refund
 from support_agent.tools.base import ErrorKind, Tool, ToolContext, ToolError, ToolInput, ToolOutput
-from support_agent.tools.identity import INVOICE_ID_PATTERN
+from support_agent.tools.identity import InvoiceId
 
 
 class IssueRefundInput(ToolInput):
-    invoice_id: str = Field(pattern=INVOICE_ID_PATTERN, description="Invoice to refund.")
+    invoice_id: InvoiceId = Field(description="Invoice to refund (format INV-YYYY-NNNNN).")
     amount: float = Field(gt=0, le=100_000, description="Amount in the invoice currency.")
     reason: RefundReason = Field(
         description="goodwill (charge was correct), billing_error (Driftwood's mistake), "

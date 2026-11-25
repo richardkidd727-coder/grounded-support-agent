@@ -13,14 +13,18 @@ def test_healthz_is_dependency_free(client: TestClient, fake_db: FakeDatabase) -
 def test_readyz_ok(client: TestClient) -> None:
     res = client.get("/readyz")
     assert res.status_code == 200
-    assert res.json() == {"status": "ready", "database": True}
+    assert res.json() == {"status": "ready", "database": True, "llm_models": ["fake:fake-model"]}
 
 
 def test_readyz_reports_db_outage(client: TestClient, fake_db: FakeDatabase) -> None:
     fake_db.healthy = False
     res = client.get("/readyz")
     assert res.status_code == 503
-    assert res.json() == {"status": "degraded", "database": False}
+    assert res.json() == {
+        "status": "degraded",
+        "database": False,
+        "llm_models": ["fake:fake-model"],
+    }
 
 
 def test_request_id_is_echoed_or_generated(client: TestClient) -> None:
