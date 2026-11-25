@@ -21,6 +21,7 @@ dependencies = [
 export-schemas = "support_agent.cli.export_schemas:main"
 ingest = "support_agent.cli.ingest:main"
 eval-retrieval = "support_agent.cli.eval_retrieval:main"
+seed = "support_agent.cli.seed:main"
 
 [build-system]
 requires = ["hatchling"]

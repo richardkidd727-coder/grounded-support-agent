@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 1 - knowledge base & RAG.** The full architecture write-up and trade-offs land
+> Status: **Phase 2 - mock CRM & tools.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -70,6 +70,41 @@ below **0.58** reject without calling an LLM (no answerable query scored lower),
 grounding judge (Phase 3). The bge query instruction was measured, not assumed: it halves the share
 of answerable questions that need the judge (23% vs 47%).
 
+## Tools & policy enforcement
+
+The agent has six tools (`apps/api/src/support_agent/tools/`):
+
+| Tool | Needs verified identity | What it does |
+|---|---|---|
+| `verify_identity` | - | Email + last 4 card digits *or* a recent invoice number; locks after 3 failures |
+| `get_account_profile` | yes | Tier, account status, subscription, Enterprise contract, recent invoices |
+| `search_policies` | - | Hybrid RAG, filtered to the verified customer's tier, with a confidence band |
+| `issue_refund` | yes | Returns `approved` / `denied` / `requires_approval` |
+| `update_account_field` | yes | Allow-listed fields only (never login email, password, 2FA), audited |
+| `create_escalation_ticket` | - | Structured hand-off with priority and the plan's response target |
+
+**The model proposes; code decides.** `crm/policy.py::evaluate_refund` is a pure function that
+applies every refund rule (60-day cap, plan windows, $100 / $500 agent limits, prorating, goodwill
+once a year, contract status, suspension, non-refundable charge types). The refund tool loads the
+data, row-locks the invoice, asks the policy engine and writes in one transaction; a database
+`CHECK` makes over-refunding impossible even if code were wrong. A test asserts the policy
+documents state the same limits the code enforces.
+
+**Identity comes from the session, never from model arguments.** Which customer is verified, their
+tier and the session id live in server-side `ToolContext`. The model cannot claim to be another
+customer, widen retrieval to another tier, or name a database column.
+
+**Failures are values, not exceptions.** `ToolExecutor` validates arguments against each tool's
+Pydantic schema, checks preconditions, applies timeouts, retries timeouts / 5xx / 429 with backoff
+(safe because refunds and tickets use idempotency keys), and always returns a structured
+`ToolOutcome` telling the model what to do next. `CHAOS_ENABLED=true` plus a plan such as
+`issue_refund:timeout:once` injects faults for the demo.
+
+**Demo personas** (`crm/personas.py`, also served at `/api/demo/personas`) each exercise a branch:
+an approved refund, an annual refund needing approval, Enterprise credits, an expired contract,
+a Free accidental upgrade, the goodwill limit, a suspended account and an out-of-window charge.
+Dates are relative to seed time and the container re-seeds on boot, so the scenarios never go stale.
+
 ## Local development
 
 Prerequisites: Docker, Node 24+, [uv](https://docs.astral.sh/uv/).
@@ -81,6 +116,7 @@ npm install                   # web + shared-types workspaces
 
 npm run db:up                 # Postgres + pgvector on localhost:55432
 npm run db:migrate            # create tables + indexes
+npm run db:seed               # load the demo customers (re-run any time to reset)
 npm run kb:ingest             # chunk + embed + index (first run downloads the model, ~130 MB)
 npm run kb:eval               # optional: retrieval metrics + gate calibration
 npm run dev:api               # http://localhost:8000  (/healthz, /readyz, /docs, /api/kb/search)

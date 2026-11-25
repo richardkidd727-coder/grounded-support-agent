@@ -10,6 +10,7 @@
     "dev:api": "uv run --project apps/api uvicorn support_agent.main:app --reload --port 8000 --app-dir apps/api/src",
     "db:up": "docker compose up -d db",
     "db:migrate": "uv run --directory apps/api alembic upgrade head",
+    "db:seed": "uv run --directory apps/api seed",
     "kb:ingest": "uv run --directory apps/api ingest",
     "kb:eval": "uv run --directory apps/api eval-retrieval",
     "gen:types": "uv run --project apps/api export-schemas && npm run gen -w @support/shared-types",

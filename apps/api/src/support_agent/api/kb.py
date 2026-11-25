@@ -1,17 +1,16 @@
 """Knowledge-base search endpoint (debugging, the observability drawer, and the eval UI)."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from support_agent.config import Settings
 from support_agent.domain import Tier
+from support_agent.rag.gate import GateBand, gate_band
 from support_agent.rag.retriever import HybridRetriever
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge-base"])
-
-GateBand = Literal["reject", "uncertain", "confident"]
 
 
 class KbHit(BaseModel):
@@ -35,14 +34,6 @@ class KbSearchResponse(BaseModel):
     embed_ms: float
     search_ms: float
     hits: list[KbHit]
-
-
-def gate_band(similarity: float, settings: Settings) -> GateBand:
-    if similarity < settings.retrieval_reject_below:
-        return "reject"
-    if similarity >= settings.retrieval_accept_above:
-        return "confident"
-    return "uncertain"
 
 
 @router.get("/search")
