@@ -1,0 +1,196 @@
+# Retrieval evaluation set.
+#
+# In-scope cases list the acceptable `docs` (any match counts) and optionally a `section`
+# substring that the chunk's section path must contain. Cases with no `docs` are out of scope:
+# the confidence gate should reject them. Several out-of-scope cases are deliberate near-misses
+# that share vocabulary with the corpus (refunds, cancelling, resetting, storage).
+#
+# Run: uv run eval-retrieval
+
+cases:
+  # --- refunds --------------------------------------------------------------------------
+  - id: refund-pro-monthly-window
+    query: How long do I have to request a refund on a monthly Pro charge?
+    tier: pro
+    docs: [refund-policy]
+    section: Monthly Pro
+  - id: refund-pro-annual
+    query: I paid for the annual plan two weeks ago, can I get my money back?
+    tier: pro
+    docs: [refund-policy]
+    section: Annual Pro
+  - id: refund-enterprise-limit
+    query: What is the largest refund support can approve for us without our account manager?
+    tier: enterprise
+    docs: [refund-policy]
+    section: Enterprise plan
+  - id: refund-free-accidental-upgrade
+    query: I got charged for an upgrade I never meant to buy
+    tier: free
+    docs: [refund-policy]
+    section: Free plan
+  - id: refund-overage
+    query: Can usage overage charges be refunded?
+    tier: null
+    docs: [refund-policy]
+  - id: refund-timing
+    query: How long until the refund shows up on my card?
+    tier: pro
+    docs: [refund-policy]
+    section: General rules
+
+  # --- plans & billing ----------------------------------------------------------------------
+  - id: plans-compare
+    query: What's the difference between Pro and Enterprise?
+    tier: null
+    docs: [subscription-plans]
+  - id: plans-max-file-size
+    query: What's the biggest file I can upload?
+    tier: pro
+    docs: [subscription-plans, troubleshooting-sync]
+  - id: billing-failed-payment
+    query: My card payment failed, will I lose access to my files?
+    tier: pro
+    docs: [billing-and-payments]
+    section: Failed payments
+  - id: billing-vat
+    query: How do I add our VAT number to invoices?
+    tier: pro
+    docs: [billing-and-payments]
+  - id: cancel-pro-renewal
+    query: If I cancel today will I be charged again next month?
+    tier: pro
+    docs: [cancellation-and-downgrades]
+  - id: enterprise-notice
+    query: How much notice do we need to give so our contract does not renew?
+    tier: enterprise
+    docs: [enterprise-contracts, cancellation-and-downgrades]
+  - id: enterprise-expired
+    query: Our contract expired last month, what can we still do in the workspace?
+    tier: enterprise
+    docs: [enterprise-contracts]
+    section: Contract status
+  - id: enterprise-outage-credit
+    query: We had a big outage last month, are we owed anything?
+    tier: enterprise
+    docs: [service-credits]
+
+  # --- support & security ---------------------------------------------------------------------
+  - id: support-free-hours
+    query: When can I email support on the free plan?
+    tier: free
+    docs: [support-hours-and-sla]
+  - id: support-p1-response
+    query: How fast will you respond to a P1 incident?
+    tier: enterprise
+    docs: [support-hours-and-sla]
+    section: Enterprise priority
+  - id: security-lost-2fa
+    query: I lost my phone that has my authenticator app on it
+    tier: null
+    docs: [account-security]
+    section: Lost two-factor
+  - id: security-verify
+    query: What do you need from me to verify who I am?
+    tier: null
+    docs: [account-security]
+    section: Verifying identity
+  - id: account-billing-email
+    query: Can you change the billing email on my account?
+    tier: pro
+    docs: [account-management, billing-and-payments]
+
+  # --- data & privacy ---------------------------------------------------------------------------
+  - id: data-export
+    query: How do I download all my files before I leave?
+    tier: pro
+    docs: [data-export-and-retention]
+    section: Exporting
+  - id: data-retention
+    query: How long do you keep my data after I cancel?
+    tier: pro
+    docs: [data-export-and-retention]
+    section: Retention
+  - id: privacy-residency
+    query: Can we keep our data stored in Europe?
+    tier: enterprise
+    docs: [privacy-and-data-requests]
+    section: Data residency
+  - id: privacy-gdpr-delete
+    query: I want you to delete all my personal data under GDPR
+    tier: null
+    docs: [privacy-and-data-requests]
+  - id: escalation-human
+    query: I want to talk to a real person
+    tier: null
+    docs: [escalation-policy]
+
+  # --- troubleshooting -------------------------------------------------------------------------
+  - id: login-password
+    query: I forgot my password
+    tier: null
+    docs: [troubleshooting-login]
+    section: Forgotten password
+  - id: login-sso
+    query: Our users get an SSO configuration error when signing in
+    tier: enterprise
+    docs: [troubleshooting-login]
+    section: Single sign-on
+  - id: sync-conflict
+    query: There is a file called conflicted copy in my folder, what happened?
+    tier: null
+    docs: [troubleshooting-sync]
+    section: Sync conflicts
+  - id: api-429
+    query: The API keeps returning 429 errors
+    tier: pro
+    docs: [troubleshooting-api]
+    section: "429"
+  - id: api-401
+    query: My API token stopped working and I get a 401
+    tier: pro
+    docs: [troubleshooting-api]
+    section: "401"
+  - id: api-webhooks
+    query: My webhook endpoint is not receiving any events
+    tier: pro
+    docs: [troubleshooting-api]
+    section: Webhooks
+
+  # --- out of scope (gate should reject) --------------------------------------------------------
+  - id: oos-weather
+    query: What's the weather in Paris tomorrow?
+    tier: pro
+  - id: oos-taxes
+    query: Can you help me file my tax return?
+    tier: pro
+  - id: oos-poem
+    query: Write me a poem about the ocean
+    tier: null
+  - id: oos-capital
+    query: What is the capital of Australia?
+    tier: null
+  - id: oos-laptop
+    query: Recommend a good laptop for video editing
+    tier: pro
+  - id: oos-translate
+    query: Translate good morning into Japanese
+    tier: null
+  - id: oos-stock
+    query: Is Driftwood stock a good investment right now?
+    tier: enterprise
+  - id: near-miss-netflix
+    query: How do I cancel my Netflix subscription?
+    tier: pro
+  - id: near-miss-gym-refund
+    query: Can I get a refund for my gym membership?
+    tier: pro
+  - id: near-miss-iphone-reset
+    query: How do I factory reset my iPhone?
+    tier: null
+  - id: near-miss-usb
+    query: Do you sell USB storage drives?
+    tier: free
+  - id: near-miss-router
+    query: My wifi router keeps disconnecting every few minutes
+    tier: pro

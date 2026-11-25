@@ -1,10 +1,13 @@
 """Application settings, loaded from environment variables (and `.env` in local dev)."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+API_ROOT = Path(__file__).resolve().parents[2]  # apps/api (or /app in the container)
 
 
 class Settings(BaseSettings):
@@ -37,7 +40,18 @@ class Settings(BaseSettings):
 
     # --- RAG -------------------------------------------------------------------
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_dim: int = 384
+    embedding_dim: int = 384  # must match the vector(384) column in the migration
+    embedding_query_instruction: str = "Represent this sentence for searching relevant passages: "
+    embedding_cache_dir: Path = API_ROOT / ".cache" / "fastembed"
+    knowledge_base_dir: Path = API_ROOT / "knowledge_base"
+    chunk_max_tokens: int = 350
+    chunk_overlap_tokens: int = 60
+    retrieval_candidates: int = 20  # per retriever, before fusion
+    retrieval_top_k: int = 5
+    # Three-band confidence gate on top cosine similarity, calibrated by `uv run eval-retrieval`
+    # (see eval/results/retrieval.md). Re-run the eval after changing the corpus or the model.
+    retrieval_reject_below: float = 0.58
+    retrieval_accept_above: float = 0.70
 
     # --- protection --------------------------------------------------------------
     rate_limit_per_minute: int = 20

@@ -5,11 +5,13 @@ description = "Customer Support AI Agent - orchestrator, RAG, tools and API"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.1",
     "asyncpg>=0.32.0",
     "fastapi>=0.165.0",
-    "pgvector>=0.5.1",
+    "fastembed>=0.9.1",
     "pydantic>=2.9",
     "pydantic-settings>=2.16.3",
+    "pyyaml>=6.0.4",
     "sqlalchemy[asyncio]>=2.0",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.54.0",
@@ -17,6 +19,8 @@ dependencies = [
 
 [project.scripts]
 export-schemas = "support_agent.cli.export_schemas:main"
+ingest = "support_agent.cli.ingest:main"
+eval-retrieval = "support_agent.cli.eval_retrieval:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,6 +57,7 @@ warn_required_dynamic_aliases = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: needs Postgres + pgvector (skipped if unreachable)"]
 
 [dependency-groups]
 dev = [
@@ -61,4 +66,5 @@ dev = [
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
     "ruff>=0.17.6",
+    "types-pyyaml>=6.0.12.20261122",
 ]
