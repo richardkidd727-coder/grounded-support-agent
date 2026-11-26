@@ -8,9 +8,12 @@ the UI turns into a countdown.
 In-process state is deliberate: the API runs as one instance on the free tier. With several
 replicas this would move to Redis (same interface).
 
-Client IPs come from `request.client`, which uvicorn fills from `X-Forwarded-For` behind the
-host's proxy (`--proxy-headers`). Trusting that header is only safe behind a proxy that sets
-it; per-session limits hold regardless.
+Client IPs: behind a host's load balancer the socket peer is the proxy, so the address comes from
+`X-Forwarded-For`. That header is client-writable - proxies *append* to whatever the client sent -
+so only the entries added by our own proxies are trusted: with `TRUSTED_PROXY_HOPS=n`, the client
+is the n-th entry from the right. Reading the leftmost entry (what uvicorn's `--proxy-headers`
+does with `--forwarded-allow-ips='*'`) would let anyone dodge the per-IP limits by sending a fake
+header. `uv run deploy-smoke` verifies the hop count against a live deployment.
 """
 
 from __future__ import annotations
@@ -82,10 +85,24 @@ class Limits:
         self.budget = SessionBudget(
             max_turns=settings.session_max_turns, max_audio_s=settings.session_max_audio_s
         )
+        self.trusted_proxy_hops = settings.trusted_proxy_hops
+
+
+def forwarded_chain(request: Request) -> list[str]:
+    """Every `X-Forwarded-For` entry, oldest (client-supplied) first."""
+    values = request.headers.getlist("x-forwarded-for")
+    return [h.strip() for value in values for h in value.split(",") if h.strip()]
 
 
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    hops = _limits(request).trusted_proxy_hops
+    if hops <= 0:
+        return peer
+    chain = forwarded_chain(request)
+    # Fewer entries than trusted proxies: misconfigured hops - fall back to the oldest one rather
+    # than reading past the start of the list.
+    return chain[-hops] if len(chain) >= hops else (chain[0] if chain else peer)
 
 
 def _too_many(retry_after: float, what: str) -> HTTPException:

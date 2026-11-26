@@ -81,6 +81,36 @@ def test_new_conversations_are_rate_limited_per_ip(make_client: Any) -> None:
     assert "new conversations" in limited.json()["detail"]
 
 
+def test_a_forged_forwarded_for_does_not_dodge_the_ip_limit(make_client: Any) -> None:
+    # Behind one proxy (Render): the proxy appends the real client; anything left of it is forged.
+    client = make_client(ip_sessions_per_minute=2, trusted_proxy_hops=1, demo_mode=True)
+    codes = [
+        client.post(
+            "/api/sessions", headers={"X-Forwarded-For": f"203.0.113.{i}, 198.51.100.9"}
+        ).status_code
+        for i in range(3)
+    ]
+    assert codes == [503, 503, 429]  # three forged addresses, one real client -> limited
+    seen = client.get("/api/demo/client", headers={"X-Forwarded-For": "1.2.3.4, 198.51.100.9"})
+    assert seen.json()["client_ip"] == "198.51.100.9"
+    assert seen.json()["forwarded_for"] == ["1.2.3.4", "198.51.100.9"]
+
+
+def test_distinct_real_clients_get_their_own_ip_budget(make_client: Any) -> None:
+    client = make_client(ip_sessions_per_minute=1, trusted_proxy_hops=1)
+    codes = [
+        client.post("/api/sessions", headers={"X-Forwarded-For": ip}).status_code
+        for ip in ("198.51.100.1", "198.51.100.2", "198.51.100.1")
+    ]
+    assert codes == [503, 503, 429]
+
+
+def test_without_trusted_proxies_the_header_is_ignored(make_client: Any) -> None:
+    client = make_client(demo_mode=True)
+    seen = client.get("/api/demo/client", headers={"X-Forwarded-For": "1.2.3.4"}).json()
+    assert seen["client_ip"] == seen["peer"] == "testclient"
+
+
 def test_turns_are_rate_limited_per_session_with_a_small_burst(make_client: Any) -> None:
     client = make_client(rate_limit_per_minute=4)  # burst = max(3, 4/4) = 3
     body = {"session_id": SESSION, "message": "hi"}

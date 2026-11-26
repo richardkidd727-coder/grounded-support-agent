@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     voice_requests_per_minute: int = 120  # transcriptions (incl. live captions) + speech
     session_max_turns: int = 200
     session_max_audio_s: float = 1800  # processed audio per session (captions re-send audio)
+    # Proxies in front of the API that append to X-Forwarded-For (Render: 1). 0 = use the socket
+    # peer (local dev, tests). See protection.client_ip.
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
     chaos_enabled: bool = False
     # Set to require `Authorization: Bearer <token>` on /api/observability (open in the demo).
     observability_token: SecretStr | None = None

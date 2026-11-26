@@ -1,10 +1,92 @@
 # Customer Support AI Agent
 
-A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
-grounded RAG with confidence guardrails, and a real-time observability drawer.
+A full-stack support agent for **Driftwood**, a fictional file-sync SaaS. It has:
 
-> Status: **Phase 7 - hardening & end-to-end tests.** The full architecture write-up and trade-offs land
-> here in Phase 8.
+* streaming chat and live voice with interruptions;
+* an autonomous tool loop that verifies the customer, checks their tier's policy, and refunds,
+  updates or escalates;
+* RAG over pgvector, with confidence guardrails that hand off to a human;
+* a real-time observability drawer.
+
+It runs entirely on free tiers.
+
+| | |
+|---|---|
+| **Live demo** | _LIVE_DEMO_URL_ (the API sleeps when idle: the first load can take ~1 min, shown as *Waking server*) |
+| **Walkthrough (Loom)** | _LOOM_URL_ |
+| **API** | _API_URL_ (`/docs` for OpenAPI, `/readyz`) |
+
+## Try it in a minute
+
+1. Open the demo and pick a persona from **Demo customers**. Its opening message and credentials
+   go into the composer.
+2. **Alice** (Pro) asks for a $45 refund. Watch the steps stream: verify identity, look up the
+   account, refund approved by the policy engine. Open **trace** under the reply for the
+   waterfall, tokens and cost.
+3. Ask *"do you offer discounts for nonprofits?"*. The knowledge base has no answer, so the
+   guardrail opens a ticket instead of letting the model guess.
+4. Use the fault menu in the header (**No faults** ▾) to rate-limit the model or time out the
+   refund tool, and watch the fallback and retry happen.
+5. Press the mic and talk: same agent, same memory. Talk over the reply to interrupt it.
+6. Other personas exercise the rest of the policy engine: a refund over the agent limit needing
+   approval (Bob), Enterprise credits (Carla), an expired contract (Dan), the goodwill limit
+   (Frank), a suspended account (Grace), and charges outside the window (Hiro).
+
+`POST /api/demo/reset` restores the demo customers (e.g. Alice's refundable invoice).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser - Next.js on Vercel"]
+    UI[Chat UI] --- Voice["Voice: AudioWorklet + VAD,<br/>barge-in"]
+    UI --- Drawer[Observability drawer]
+  end
+  subgraph API["FastAPI on Render (Docker, free)"]
+    Limits[Rate limits, CORS,<br/>security headers] --> Runner[Turn runner<br/>own task per turn]
+    Runner --> Orch[Orchestrator<br/>model ⇄ tools loop]
+    Orch --> Router[LLM router<br/>fallback + budgets]
+    Orch --> Exec[Tool executor<br/>schema, identity, retry]
+    Exec --> Policy[Policy engine<br/>pure function]
+    Exec --> RAG[Hybrid retrieval<br/>+ 3-band gate]
+    Orch --> Judge[Grounding judge]
+    Orch --> Guard[Output guard]
+  end
+  subgraph Groq["Groq (free)"]
+    LLM[gpt-oss-120b →<br/>qwen3.8-27b]
+    STT[Whisper]
+    TTS[Orpheus TTS]
+  end
+  DB[("Neon Postgres + pgvector<br/>KB, CRM, sessions, traces")]
+  UI -- "POST /api/chat/stream (SSE)" --> Limits
+  Voice -- "transcribe / speak" --> Limits
+  Drawer -- "turn traces, summary" --> Limits
+  Router --> LLM
+  Judge --> LLM
+  API --> STT & TTS
+  RAG --> DB
+  Policy --> DB
+  Runner -- "events + memory" --> DB
+```
+
+**One turn:** the message (typed or transcribed) starts a turn in its own task. Every step
+(model call, tool, judge, guardrail, escalation, metrics) is emitted on one typed event protocol.
+The events are streamed over SSE to the chat, stored per turn for the trace drawer, and replayed
+on reload. Voice is the same turn with `mode=voice`: the reply is cut into sentences and spoken
+while it streams.
+
+### Where each requirement lives
+
+| Requirement | Implementation | Proof |
+|---|---|---|
+| Autonomous tool loop (3+ tools) | 6 tools; the model chains verify → profile → policy search → refund / update / ticket. Code decides the outcome; the model proposes ([Tools](#tools--policy-enforcement), [Agent loop](#agent-loop)) | `test_orchestrator.py`, `test_guarantees.py`, E2E refund test |
+| RAG + confidence escalation | Hybrid pgvector + full-text search (RRF) filtered by tier in SQL, and a calibrated three-band gate plus a judge that fails closed and opens the ticket in code ([RAG](#rag--grounding)) | `eval/results/retrieval.md` (Hit@3 100%), E2E guardrail test |
+| Streaming with live step status | SSE event protocol, generated TS types, one reducer for live / reload / recovery ([Chat UI](#chat-ui)) | web unit tests, E2E |
+| Live voice, transcripts, interruptions | AudioWorklet + VAD → Whisper → same agent → sentence TTS; barge-in recorded on the turn ([Voice](#voice)) | E2E with a WAV fake mic |
+| Multi-turn memory across text and voice | Session state (verified identity, tier) plus token-budgeted history in Postgres ([Memory](#memory-and-sessions)) | E2E reload test |
+| Error recovery | Model fallback, tool retries with idempotency keys, honest degraded replies, turns that survive a dropped connection ([Error recovery](#error-recovery)) | fault-injection menu, E2E resilience tests |
+| Observability | Per-turn waterfall, latency, tokens, cost, plus a SQL service summary ([Observability](#observability)) | drawer, `/api/observability/summary` |
+| Production readiness | Rate limits, CSP and headers, output guard, adversarial eval 7/7, load smoke, CI with E2E, post-deploy smoke ([Hardening](#hardening), [Deployment](#deployment)) | `eval/results/adversarial.md`, CI |
 
 ## Repository layout
 
@@ -14,8 +96,11 @@ apps/
   web/              Next.js frontend - chat, voice, observability drawer
 packages/
   shared-types/     TS types generated from the API's Pydantic event schema
+e2e/                Playwright browser suite (scripted models, fake speech)
 infra/db/           Postgres init (pgvector)
+docs/               Deploy walkthrough, demo script
 docker-compose.yml  Local Postgres + pgvector (and an optional prod-like API container)
+render.yaml         Render Blueprint for the API
 ```
 
 **One event protocol.** `apps/api/src/support_agent/events/schema.py` defines every event a turn
@@ -32,7 +117,7 @@ voice and the observability drawer all consume it. TypeScript types are generate
 | Voice | Groq Whisper (speech-to-text) + Orpheus TTS, browser speech synthesis as fallback |
 | Embeddings | `fastembed` running locally (`bge-small-en-v1.5`), no key |
 | Database / vectors | Postgres + pgvector (Docker locally, Neon when deployed) |
-| Hosting | Vercel (web) + Render (API) |
+| Hosting | Vercel (web) + Render (API, Docker) + Neon (Postgres) |
 
 ## RAG & grounding
 
@@ -380,6 +465,55 @@ database. The 11 tests cover:
 
 Locally it drives the installed Edge (no browser download); CI uses Chromium.
 
+## Deployment
+
+| Piece | Host (free) | Config |
+|---|---|---|
+| Web | Vercel, root directory `apps/web` | `NEXT_PUBLIC_API_URL` (the build fails without it) |
+| API | Render free web service, Docker | [`render.yaml`](render.yaml) Blueprint |
+| Database | Neon Postgres 17 + pgvector | `DATABASE_URL` on Render |
+
+Step-by-step setup is in [docs/deploy.md](docs/deploy.md).
+
+* **Boot.** `serve` runs migrations, then knowledge-base ingest (a no-op when unchanged),
+  re-seeds the demo customers, loads the embedding model, and only then opens the port. Render's
+  free tier has no pre-deploy hook, so the boot does this itself. It is one Python process: each
+  extra process cost 10–25 s of imports at 0.1 CPU.
+* **Image.** The embedding model is baked into the image, so a cold start never downloads it.
+  The image runs as a non-root user.
+* **Deploys.** Render redeploys only after CI passes on `main`. Vercel deploys every push.
+* **Client addresses.** Behind Render's proxy, per-IP limits read `X-Forwarded-For` from the
+  right (`TRUSTED_PROXY_HOPS`), so a forged header cannot dodge them.
+* **Neon.** Its pooled endpoint is handled too: asyncpg's statement cache is disabled and
+  prepared statements get unique names.
+* **Checking a deployment.** `uv run deploy-smoke --api <url> --web <url>` checks it end to end:
+  * it wakes the API and reports the cold start;
+  * readiness, security headers on both apps, and that CORS allows only the web origin;
+  * that a forged `X-Forwarded-For` doesn't change the client address;
+  * a real two-turn conversation (model, embeddings, pgvector, judge, citations);
+  * voice config and the observability summary.
+
+**Sized for the free tier, measured.** The production image was run under Render's free limits
+(`docker run --memory=512m --cpus=0.1`), against an empty database the first time:
+
+| | Result |
+|---|---|
+| First boot (empty DB: migrate, embed all 68 chunks, seed) | 350 s, once per database |
+| Cold start (wake from sleep) | 55 s to healthy, 37 s of it loading the embedding model |
+| Memory | 150 MB idle, **285 MB peak** during conversations (of 512 MB) |
+| Grounded answer right after a cold start | 12 s end to end; policy search 1.8 s |
+| Graceful shutdown (SIGTERM) | 3 s, in-flight turns drained |
+
+That test found a real bug. The model used to load in the background after the port opened, so
+at 0.1 CPU the first question's search timed out twice. It now loads before the port opens, and
+the host routes no traffic until it has.
+
+**Cold starts.** Render spins the free instance down after 15 idle minutes and takes about a
+minute to wake. The page pings `/healthz` on load and shows *Waking server* until the API
+answers. An optional GitHub Action ([`keep-warm.yml`](.github/workflows/keep-warm.yml)) pings it
+every 10 minutes while the demo is under review; it is off unless the `KEEP_WARM_URL` repository
+variable is set.
+
 ## Local development
 
 Prerequisites: Docker, Node 24+, [uv](https://docs.astral.sh/uv/).
@@ -407,3 +541,27 @@ npm run lint && npm run typecheck && npm run test:web && npm run build:web
 npm run e2e                     # browser suite (starts its own API + web build)
 npm run gen:types && git diff --exit-code packages/shared-types
 ```
+
+## Trade-offs and next steps
+
+Decisions that were deliberate, and what would change with a budget or more time.
+
+| Decision | Why | At scale / next |
+|---|---|---|
+| Cascade voice (Whisper → agent → TTS) instead of speech-to-speech | One code path: voice turns get the same tools, guardrails, memory and traces as chat. Gemini Live's free tier was unavailable | ~1s more latency. Add a speech-to-speech model for small talk and keep the cascade for account actions |
+| Policy enforced in a pure function, not the prompt | Refund limits must hold even when the model is fooled (tested with a compromised model) | Move the rules to a versioned config owned by the billing team |
+| Three-band retrieval gate + judge, failing closed | Similarity ranges for answerable and out-of-scope questions overlap, so one threshold is unsafe | Re-calibrate with real traffic; add a reranker |
+| Free-tier models with a fallback chain | ~8k tokens/min per model is the binding constraint; the router spends it carefully | Paid tier with the same router; the drawer already shows list-price cost per 1,000 turns |
+| In-process rate limits and turn tasks | One free instance; no Redis to pay for | Redis buckets and a queue for turns; the interfaces are already narrow |
+| Local embeddings (bge-small, 384-d) | No key, no per-call cost, baked into the image | Larger or hosted embeddings if recall on a bigger corpus needs it |
+| Events stored as JSON per turn | One schema powers live UI, reload, recovery and analytics | OpenTelemetry export to a tracing backend; partitioning by date |
+| Mock CRM in Postgres | Realistic constraints (row locks, `CHECK`s, idempotency keys) without a vendor | Adapters to the real billing and helpdesk APIs behind the same tool interface |
+
+Known limits of the demo:
+
+* The free API sleeps when idle.
+* Orpheus TTS needs a one-time terms acceptance in the Groq console. Until then the browser's
+  voice is used.
+* Rate limits reset when the instance restarts.
+* The observability endpoints are open, so the demo can be explored. Set `OBSERVABILITY_TOKEN` to
+  close them.

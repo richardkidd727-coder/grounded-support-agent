@@ -1,0 +1,38 @@
+# Render Blueprint for the API (free web service, Docker).
+# Dashboard -> New -> Blueprint -> pick this repo. Values marked `sync: false` are asked for once.
+# Database: Neon (free, pgvector) - Render's own free Postgres expires after 30 days.
+# Web app: Vercel (apps/web). Full walkthrough: docs/deploy.md
+services:
+  - type: web
+    name: support-agent-api
+    runtime: docker
+    plan: free # 0.1 CPU / 512 MB; sleeps after 15 min idle, ~1 min to wake
+    region: oregon # keep next to the Neon region (AWS us-west-2); fixed after creation
+    rootDir: apps/api # dockerfilePath/dockerContext are relative to this
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass # redeploy on main only after CI is green
+    buildFilter: # relative to the repo root
+      paths:
+        - apps/api/**
+      ignoredPaths:
+        - apps/api/tests/**
+        - apps/api/eval/**
+    envVars:
+      - key: ENV
+        value: production # JSON logs, HSTS
+      - key: DATABASE_URL
+        sync: false # Neon *direct* connection string (pooled also works)
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false # the Vercel URL, e.g. https://grounded-support-agent.vercel.app
+      - key: TRUSTED_PROXY_HOPS
+        value: "1" # Render's proxy appends the client to X-Forwarded-For; deploy-smoke verifies
+      - key: DEMO_MODE
+        value: "true" # persona picker + POST /api/demo/reset
+      - key: CHAOS_ENABLED
+        value: "true" # fault-injection menu; faults only affect the requesting turn
+      - key: LOG_LEVEL
+        value: INFO

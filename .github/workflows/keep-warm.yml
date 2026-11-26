@@ -1,0 +1,25 @@
+# Optional: keep the free Render instance from sleeping while the demo is under review.
+# Render spins a free web service down after 15 minutes without traffic (~1 minute to wake).
+# Opt in by setting the repository variable KEEP_WARM_URL to the API's /healthz URL
+# (Settings -> Secrets and variables -> Actions -> Variables). Delete the variable to stop.
+# One always-on service uses ~744 of the workspace's 750 free instance hours a month.
+# GitHub may delay scheduled runs, so this reduces cold starts rather than removing them.
+name: Keep demo warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: vars.KEEP_WARM_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Ping /healthz
+        run: curl --fail --silent --show-error --max-time 120 --retry 3 --retry-delay 10 "$URL"
+        env:
+          URL: ${{ vars.KEEP_WARM_URL }}

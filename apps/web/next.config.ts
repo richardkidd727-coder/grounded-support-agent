@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
+// On Vercel a missing API URL would silently ship a site that calls localhost: fail the build.
+if (process.env.VERCEL && !process.env.NEXT_PUBLIC_API_URL) {
+  throw new Error("Set NEXT_PUBLIC_API_URL (the Render API URL) in the Vercel project settings.");
+}
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const apiOrigin = new URL(apiUrl).origin;
 

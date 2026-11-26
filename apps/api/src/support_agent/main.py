@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -93,10 +94,16 @@ def create_app(
         if not app.state.agent_llm.configured:
             log.warning("no_llm_configured", hint="set GROQ_API_KEY and/or GEMINI_API_KEY")
 
-        warm_up: asyncio.Task[None] | None = None
         if isinstance(app.state.embedder, FastEmbedEmbedder):
-            # Load the ONNX model off the request path so the first question is not slow.
-            warm_up = asyncio.create_task(asyncio.to_thread(app.state.embedder.warm_up))
+            # Load the ONNX model *before* the port opens: uvicorn binds after startup, so the
+            # host routes no traffic until it is ready. Measured at Render's free 0.1 CPU, a
+            # background warm-up lost the race and the first question's search timed out.
+            started = time.perf_counter()
+            try:
+                await asyncio.to_thread(app.state.embedder.warm_up)
+                log.info("embedder_ready", seconds=round(time.perf_counter() - started, 1))
+            except Exception:  # serve anyway: the first search retries the load
+                log.exception("embedder_warm_up_failed")
         log.info(
             "startup", env=settings.env, version=__version__, llm_chain=app.state.agent_llm.chain
         )
@@ -104,8 +111,6 @@ def create_app(
             yield
         finally:
             await app.state.runner.shutdown()
-            if warm_up and not warm_up.done():
-                warm_up.cancel()
             await http.aclose()
             await app.state.db.dispose()
             log.info("shutdown")
