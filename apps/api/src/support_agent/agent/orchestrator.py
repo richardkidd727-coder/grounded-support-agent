@@ -46,6 +46,7 @@ from support_agent.events.schema import (
     TurnCompleted,
     TurnMetrics,
     TurnStarted,
+    VoiceInput,
 )
 from support_agent.llm.pricing import list_price_usd
 from support_agent.llm.router import AttemptFailed, LlmRouter
@@ -102,6 +103,7 @@ class TurnInput:
     auth: SessionAuth  # mutated in place by verify_identity; the caller persists it
     chaos: ChaosPlan | None = None
     interrupted_after: str | None = None  # voice barge-in: what was heard of the last reply
+    voice_input: VoiceInput | None = None  # speech-to-text timing for voice turns
 
 
 @dataclass(slots=True)
@@ -219,6 +221,7 @@ class Agent:
             mode=inp.mode,
             user_text=inp.user_text,
             interrupted_after=inp.interrupted_after,
+            voice_input=inp.voice_input,
         )
         try:
             outcome = await self._loop(turn)

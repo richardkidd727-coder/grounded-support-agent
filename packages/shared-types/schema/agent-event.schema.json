@@ -659,6 +659,18 @@
         },
         "user_text": {
           "type": "string"
+        },
+        "voice_input": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VoiceInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Speech-to-text timing, for voice turns."
         }
       },
       "required": [
@@ -669,9 +681,36 @@
         "type",
         "mode",
         "user_text",
-        "interrupted_after"
+        "interrupted_after",
+        "voice_input"
       ],
       "title": "TurnStarted",
+      "type": "object"
+    },
+    "VoiceInput": {
+      "additionalProperties": false,
+      "description": "How a voice turn's text was obtained (measured in the browser + transcription API).",
+      "properties": {
+        "audio_s": {
+          "description": "Length of the customer's speech.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "stt_model": {
+          "type": "string"
+        },
+        "stt_ms": {
+          "description": "Transcription round trip for the final utterance.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stt_model",
+        "stt_ms",
+        "audio_s"
+      ],
+      "title": "VoiceInput",
       "type": "object"
     }
   },

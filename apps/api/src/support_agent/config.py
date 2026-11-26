@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     # --- protection --------------------------------------------------------------
     rate_limit_per_minute: int = 20
     chaos_enabled: bool = False
+    # Set to require `Authorization: Bearer <token>` on /api/observability (open in the demo).
+    observability_token: SecretStr | None = None
     # Exposes the demo persona picker (fake customers, incl. their verification details).
     demo_mode: bool = True
 

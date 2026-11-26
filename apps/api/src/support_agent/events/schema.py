@@ -40,6 +40,14 @@ class StepKind(StrEnum):
     GUARDRAIL = "guardrail"
 
 
+class VoiceInput(_Model):
+    """How a voice turn's text was obtained (measured in the browser + transcription API)."""
+
+    stt_model: str
+    stt_ms: int = Field(ge=0, description="Transcription round trip for the final utterance.")
+    audio_s: float = Field(ge=0, description="Length of the customer's speech.")
+
+
 class Citation(_Model):
     chunk_id: str
     doc_id: str
@@ -81,6 +89,9 @@ class TurnStarted(_Event):
         default=None,
         description="Voice barge-in: what the customer heard of the previous reply before "
         "talking over it (empty string: nothing). Null when the previous reply was not cut off.",
+    )
+    voice_input: VoiceInput | None = Field(
+        default=None, description="Speech-to-text timing, for voice turns."
     )
 
 

@@ -61,7 +61,9 @@ export function useVoice({ sessionId, turns, send, whenIdle, chaos }: Args) {
   const pendingInterruption = useRef<string | null>(null);
   // Transcriptions of utterances not yet sent. People pause mid-thought; if they resume before
   // we reply, the pieces are joined - in speaking order, whatever order Whisper answers in.
-  const segments = useRef<{ seq: number; text: Promise<string> }[]>([]);
+  const segments = useRef<{ seq: number; text: Promise<string>; audioMs: number }[]>([]);
+  const sttModel = useRef("whisper");
+  const lastSttMs = useRef(0);
   const utteranceSeq = useRef(0);
   const partialInFlight = useRef(false);
   const live = useRef({ sessionId, chaos, send, whenIdle });
@@ -123,13 +125,14 @@ export function useVoice({ sessionId, turns, send, whenIdle, chaos }: Args) {
               .transcribe(id, wav)
               .then((r) => {
                 setSttMs(r.latency_ms);
+                lastSttMs.current = r.latency_ms;
                 return r.text;
               })
               .catch(() => {
                 failed = true;
                 return "";
               });
-      segments.current.push({ seq, text });
+      segments.current.push({ seq, text, audioMs: durationMs });
       go("transcribing");
       await text;
       // Only the newest utterance sends; it collects the earlier ones.
@@ -164,6 +167,11 @@ export function useVoice({ sessionId, turns, send, whenIdle, chaos }: Args) {
         key,
         chaos: live.current.chaos,
         interruptedAfter,
+        voiceInput: {
+          stt_model: sttModel.current,
+          stt_ms: lastSttMs.current, // the final utterance's round trip: what the customer waited
+          audio_s: Math.round(parts.reduce((n, p) => n + p.audioMs, 0) / 100) / 10,
+        },
       });
     },
     [go],
@@ -209,6 +217,7 @@ export function useVoice({ sessionId, turns, send, whenIdle, chaos }: Args) {
       return;
     }
     speaker.applyEngine(config.tts);
+    sttModel.current = config.stt_model;
     setEngine(speaker.engineName);
 
     const mic = new MicCapture({

@@ -16,7 +16,7 @@ function ev<T extends AgentEvent["type"]>(
 function liveTurn(): AgentEvent[] {
   seq = 0;
   return [
-    ev("turn.started", { mode: "chat", user_text: "refund?", interrupted_after: null }),
+    ev("turn.started", { mode: "chat", user_text: "refund?", interrupted_after: null, voice_input: null }),
     ev("step.started", { step_id: "s1", kind: "llm", name: "llm", label: "Thinking...", input_preview: null }),
     ev("step.completed", {
       step_id: "s1",

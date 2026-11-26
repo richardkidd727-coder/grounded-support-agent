@@ -131,7 +131,7 @@ function Sources({ turn }: { turn: TurnView }) {
   );
 }
 
-function Meta({ turn }: { turn: TurnView }) {
+function Meta({ turn, onTrace }: { turn: TurnView; onTrace?: () => void }) {
   const m = turn.metrics;
   if (!m || turn.status !== "done") return null;
   const tokens = m.llm_calls.reduce((n, c) => n + c.input_tokens + c.output_tokens, 0);
@@ -143,6 +143,18 @@ function Meta({ turn }: { turn: TurnView }) {
       total {(m.total_ms / 1000).toFixed(1)}s · {tokens.toLocaleString()} tokens · $
       {cost.toFixed(5)} at list price ($0 on free tier)
       {models.length > 0 && ` · ${models.join(", ")}`}
+      {onTrace && (
+        <>
+          {" · "}
+          <button
+            type="button"
+            onClick={onTrace}
+            className="text-sky-700 underline-offset-2 hover:underline dark:text-sky-400"
+          >
+            trace
+          </button>
+        </>
+      )}
     </p>
   );
 }
@@ -150,10 +162,12 @@ function Meta({ turn }: { turn: TurnView }) {
 export function TurnItem({
   turn,
   onRetry,
+  onTrace,
   heardBeforeInterruption = null,
 }: {
   turn: TurnView;
   onRetry: (turn: TurnView) => void;
+  onTrace?: (turn: TurnView) => void;
   /** Set when the next (voice) turn cut this reply off: what the customer had heard. */
   heardBeforeInterruption?: string | null;
 }) {
@@ -193,7 +207,7 @@ export function TurnItem({
           <EscalationCard turn={turn} />
           <Badges turn={turn} heard={heardBeforeInterruption} />
           <Sources turn={turn} />
-          <Meta turn={turn} />
+          <Meta turn={turn} onTrace={onTrace ? () => onTrace(turn) : undefined} />
         </div>
       </div>
     </div>

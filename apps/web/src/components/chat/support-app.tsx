@@ -12,6 +12,7 @@ import { ChaosMenu } from "./chaos-menu";
 import { Composer } from "./composer";
 import { PersonaPanel } from "./persona-panel";
 import { TurnItem } from "./turn-item";
+import { ObservabilityDrawer } from "../observability/observability-drawer";
 import { VoicePanel } from "../voice/voice-panel";
 
 const STARTERS = [
@@ -30,6 +31,12 @@ export function SupportApp() {
   const [chaos, setChaos] = useState("");
   const [chaosEnabled, setChaosEnabled] = useState(false);
   const [showPersonas, setShowPersonas] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceKey, setTraceKey] = useState<string | null>(null);
+  const openTrace = useCallback((turn?: TurnView) => {
+    setTraceKey(turn?.key ?? null); // null = follow the latest turn
+    setTraceOpen(true);
+  }, []);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   // Voice shares the session: its turns land in the same conversation and memory as typed ones.
@@ -88,6 +95,14 @@ export function SupportApp() {
         <ApiStatus />
         <button
           type="button"
+          onClick={() => (traceOpen ? setTraceOpen(false) : openTrace())}
+          aria-expanded={traceOpen}
+          className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+        >
+          📊 Observability
+        </button>
+        <button
+          type="button"
           onClick={() => setShowPersonas((v) => !v)}
           className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 lg:hidden dark:border-zinc-800 dark:text-zinc-400"
           aria-expanded={showPersonas}
@@ -143,6 +158,7 @@ export function SupportApp() {
                   turn={turn}
                   onRetry={retry}
                   heardBeforeInterruption={turns[i + 1]?.interruptedAfter ?? null}
+                  onTrace={openTrace}
                 />
               ))}
             </div>
@@ -213,6 +229,13 @@ export function SupportApp() {
           <PersonaPanel onUse={applyPersona} />
         </aside>
       </div>
+      <ObservabilityDrawer
+        open={traceOpen}
+        onClose={() => setTraceOpen(false)}
+        turns={turns}
+        selectedKey={traceKey}
+        onSelect={setTraceKey}
+      />
     </div>
   );
 }
