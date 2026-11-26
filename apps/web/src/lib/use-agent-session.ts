@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
+import type { VoiceInput } from "@support/shared-types";
+
 import { api, ApiError, type Mode, type SessionView, type TurnTrace } from "./api";
 import { conversationReducer, isBusy, turnFromTrace, type TurnError } from "./conversation";
 
@@ -19,6 +21,8 @@ export interface SendOptions {
   key?: string;
   /** Voice barge-in: what the customer heard of the previous reply before interrupting. */
   interruptedAfter?: string | null;
+  /** Voice: speech-to-text timing, recorded on the turn's trace. */
+  voiceInput?: VoiceInput | null;
 }
 
 function storedSessionId(): string | null {
@@ -183,6 +187,7 @@ export function useAgentSession() {
             mode: opts.mode ?? "chat",
             chaos: opts.chaos,
             interruptedAfter: opts.interruptedAfter,
+            voiceInput: opts.voiceInput,
           },
           controller.signal,
         )) {

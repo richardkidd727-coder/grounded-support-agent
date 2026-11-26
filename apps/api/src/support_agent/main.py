@@ -13,7 +13,7 @@ from support_agent.agent.grounding import GroundingJudge
 from support_agent.agent.orchestrator import Agent
 from support_agent.agent.runner import TurnRunner
 from support_agent.agent.store import SessionStore
-from support_agent.api import chat, demo, health, kb, voice
+from support_agent.api import chat, demo, health, kb, observability, voice
 from support_agent.api.middleware import REQUEST_ID_HEADER, request_context
 from support_agent.config import Settings, get_settings
 from support_agent.db import Database
@@ -107,6 +107,7 @@ def create_app(
     app.include_router(kb.router)
     app.include_router(chat.router)
     app.include_router(voice.router)
+    app.include_router(observability.router)
     if settings.demo_mode:
         app.include_router(demo.router)
     return app

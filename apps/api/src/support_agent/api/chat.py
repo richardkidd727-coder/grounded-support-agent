@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from support_agent.agent.runner import SessionBusy, TurnRunner
 from support_agent.agent.store import SESSION_ID_PATTERN, SessionNotFound
 from support_agent.config import Settings
-from support_agent.events.schema import AgentEvent, AgentEventAdapter, Mode
+from support_agent.events.schema import AgentEvent, AgentEventAdapter, Mode, VoiceInput
 from support_agent.tools.chaos import ChaosPlan, ChaosPlanError
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -47,6 +47,7 @@ class ChatRequest(_Body):
     mode: Mode = "chat"
     # Voice barge-in: what the customer actually heard of the previous reply before cutting in.
     interrupted_after: str | None = Field(default=None, max_length=4000)
+    voice_input: VoiceInput | None = None  # speech-to-text timing, recorded in the trace
 
 
 class TranscriptMessage(BaseModel):
@@ -169,6 +170,7 @@ async def chat_stream(
             mode=body.mode,
             chaos=chaos,
             interrupted_after=body.interrupted_after,
+            voice_input=body.voice_input if body.mode == "voice" else None,
         )
     except SessionNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found or expired") from None

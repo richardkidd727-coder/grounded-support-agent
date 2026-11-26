@@ -35,6 +35,24 @@ export interface TurnStarted {
   turn_id: string;
   type: "turn.started";
   user_text: string;
+  /**
+   * Speech-to-text timing, for voice turns.
+   */
+  voice_input: VoiceInput | null;
+}
+/**
+ * How a voice turn's text was obtained (measured in the browser + transcription API).
+ */
+export interface VoiceInput {
+  /**
+   * Length of the customer's speech.
+   */
+  audio_s: number;
+  stt_model: string;
+  /**
+   * Transcription round trip for the final utterance.
+   */
+  stt_ms: number;
 }
 export interface StepStarted {
   input_preview: {

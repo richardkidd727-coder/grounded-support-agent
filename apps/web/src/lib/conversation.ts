@@ -62,6 +62,8 @@ export interface TurnView {
   metrics: TurnMetrics | null;
   error: TurnError | null;
   lastSeq: number;
+  /** Every event of the turn, in order: the raw material for the observability drawer. */
+  events: AgentEvent[];
 }
 
 export type ConversationAction =
@@ -88,12 +90,18 @@ export function newTurn(key: string, userText: string, mode: Mode): TurnView {
     metrics: null,
     error: null,
     lastSeq: -1,
+    events: [],
   };
 }
 
 export function applyEvent(turn: TurnView, event: AgentEvent): TurnView {
   if (event.seq <= turn.lastSeq) return turn; // duplicate or replayed
-  const next: TurnView = { ...turn, lastSeq: event.seq, turnId: event.turn_id };
+  const next: TurnView = {
+    ...turn,
+    lastSeq: event.seq,
+    turnId: event.turn_id,
+    events: [...turn.events, event],
+  };
 
   switch (event.type) {
     case "turn.started":

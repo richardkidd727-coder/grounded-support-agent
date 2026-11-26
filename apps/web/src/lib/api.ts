@@ -1,6 +1,6 @@
 /** Typed client for the FastAPI backend. */
 
-import type { AgentEvent } from "@support/shared-types";
+import type { AgentEvent, VoiceInput } from "@support/shared-types";
 
 import { API_URL } from "./config";
 import { parseAgentEvent } from "./events";
@@ -52,6 +52,41 @@ export interface Transcript {
   language: string | null;
   duration_s: number;
   latency_ms: number;
+}
+
+export interface ServiceSummary {
+  window_hours: number;
+  since: string;
+  sessions: number;
+  turns: number;
+  voice_turns: number;
+  outcomes: { answered: number; escalated: number; degraded: number };
+  total_ms: { p50: number | null; p95: number | null };
+  ttft_ms: { p50: number | null; p95: number | null };
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd_list_price: number;
+  cost_usd_per_1k_turns: number | null;
+  model_fallbacks: number;
+  models: {
+    provider: string;
+    model: string;
+    purpose: string;
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    p50_latency_ms: number | null;
+    cost_usd_list_price: number;
+  }[];
+  steps: {
+    name: string;
+    kind: string;
+    calls: number;
+    errors: number;
+    p50_ms: number | null;
+    p95_ms: number | null;
+  }[];
+  guardrails: { answered: number; escalated: number; judge_calls: number; auto_tickets: number };
 }
 
 export interface SessionView {
@@ -113,6 +148,9 @@ export const api = {
 
   voiceConfig: () => request<VoiceConfig>("/api/voice/config"),
 
+  serviceSummary: (windowHours: number) =>
+    request<ServiceSummary>(`/api/observability/summary?window_hours=${windowHours}`),
+
   /** One utterance (16 kHz WAV) -> text. Empty text means no speech was detected. */
   transcribe: (sessionId: string, wav: ArrayBuffer, signal?: AbortSignal) =>
     request<Transcript>(`/api/voice/transcribe?session_id=${encodeURIComponent(sessionId)}`, {
@@ -145,6 +183,7 @@ export const api = {
       mode: Mode;
       chaos?: string | null;
       interruptedAfter?: string | null;
+      voiceInput?: VoiceInput | null;
     },
     signal?: AbortSignal,
   ): AsyncGenerator<AgentEvent> {
@@ -161,6 +200,7 @@ export const api = {
         message: args.message,
         mode: args.mode,
         ...(args.interruptedAfter != null ? { interrupted_after: args.interruptedAfter } : {}),
+        ...(args.voiceInput ? { voice_input: args.voiceInput } : {}),
       }),
       signal,
     });

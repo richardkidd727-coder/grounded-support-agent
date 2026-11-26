@@ -7,7 +7,8 @@
   model. The failure is yielded as an `AttemptFailed` item so the UI/trace can show it.
 * Quotas are per API key, so cooldowns are process-wide: one session's 429 spares the others.
 * If nothing is ready, wait for the soonest model when that is short, else fail fast with a
-  `retry_after_s` the client can show.
+  `retry_after_s` the client can show. A model held back only by the *estimated* token budget
+  (not a real 429) is still tried as a last resort before giving up.
 * Never falls back once text has been streamed: the user has already seen it, and splicing a
   second model's answer onto the first would be worse than an honest error.
 """
@@ -88,6 +89,17 @@ class LlmRouter:
         budget = budget_wait(tokens) if callable(budget_wait) else 0.0
         return max(cooldown, budget, 0.0)
 
+    def _hard_cooling(self, index: int) -> bool:
+        """Cooling down after a real 429/quota/auth error for longer than we are willing to wait."""
+        return self._cooldown_until[index] - self._clock() > self._max_wait
+
+    def _soonest_rate_limited(self, error: LlmError) -> int | None:
+        """The model to wait for when all were rate-limited, if that wait is short enough."""
+        if error.kind is not LlmErrorKind.RATE_LIMITED:
+            return None
+        index = min(range(len(self._clients)), key=lambda i: self._cooldown_until[i])
+        return None if self._hard_cooling(index) else index
+
     def _cool(self, index: int, error: LlmError) -> None:
         if error.kind is LlmErrorKind.RATE_LIMITED:
             seconds = (
@@ -114,10 +126,13 @@ class LlmRouter:
 
         last_error: LlmError | None = None
         attempt = 0
-        for position, index in enumerate(order):
+        queue = list(order)
+        second_pass = False
+        while queue:
+            index = queue.pop(0)
             client = self._clients[index]
             wait = self._wait_s(index, tokens)
-            if wait > self._max_wait:
+            if self._hard_cooling(index):  # a real 429/quota cooldown: don't knock again
                 last_error = LlmError(
                     LlmErrorKind.RATE_LIMITED,
                     "rate limited; waiting for the per-minute budget to refill",
@@ -126,7 +141,9 @@ class LlmRouter:
                     retry_after_s=round(wait, 1),
                 )
                 continue
-            if wait > 0:
+            # A longer wait here is only our *estimate* of the token bucket, and every model
+            # ahead of this one has already failed: try it now rather than fail - worst case 429.
+            if 0 < wait <= self._max_wait:
                 await self._sleep(wait)
 
             attempt += 1
@@ -152,7 +169,14 @@ class LlmRouter:
                 if exc.partial or exc.kind not in FALLBACK_KINDS:
                     raise
                 last_error = exc
-                if any(self._wait_s(i, tokens) <= self._max_wait for i in order[position + 1 :]):
+                if not queue and not second_pass:
+                    # Every model has been tried. If they were only rate-limited and one frees
+                    # up within the wait budget, wait for it once instead of failing the turn.
+                    retry = self._soonest_rate_limited(exc)
+                    if retry is not None:
+                        queue.append(retry)
+                        second_pass = True
+                if any(not self._hard_cooling(i) for i in queue):
                     yield AttemptFailed(exc)  # only announce a fallback that will happen
 
         assert last_error is not None

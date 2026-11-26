@@ -101,15 +101,24 @@ async def test_rate_limit_cooldown_is_shared_by_later_requests() -> None:
     assert third[-1].model == "p"  # cooled down: back to the preferred model
 
 
-async def test_waits_briefly_when_every_model_is_cooling() -> None:
+async def test_waits_once_for_a_short_rate_limit_instead_of_failing() -> None:
     clock = Clock()
     only = FakeLlm([err(LlmErrorKind.RATE_LIMITED, retry_after=2), Reply("ok")], model="only")
-    r = router(only, clock=clock)
-    with pytest.raises(LlmError):
-        await run(r)
-    items = await run(r)
+    items = await run(router(only, clock=clock))
     assert clock.slept == [2.0]
+    assert [i.error.model for i in items if isinstance(i, AttemptFailed)] == ["only"]
     assert items[-1].text == "ok"
+
+
+async def test_when_every_model_is_rate_limited_the_soonest_is_retried() -> None:
+    # The live failure: backup chaos-killed, primary out of tokens-per-minute (Retry-After 7s).
+    clock = Clock()
+    primary = FakeLlm([err(LlmErrorKind.RATE_LIMITED, retry_after=7), Reply("primary")], model="p")
+    backup = FakeLlm([err(LlmErrorKind.RATE_LIMITED, retry_after=9)], model="b")
+    items = await run(router(primary, backup, clock=clock, max_wait=12))
+    assert clock.slept == [7.0]
+    assert items[-1].model == "p"
+    assert [i.error.model for i in items if isinstance(i, AttemptFailed)] == ["p", "b"]
 
 
 async def test_fails_fast_with_retry_after_when_the_wait_is_long() -> None:
@@ -133,6 +142,19 @@ async def test_skips_a_model_whose_token_budget_cannot_fit_the_request() -> None
     assert not any(isinstance(i, AttemptFailed) for i in items)  # skipped, not attempted
     assert items[-1].model == "b"
     assert primary.remaining == 1
+
+
+async def test_a_budget_limited_model_is_still_tried_before_giving_up() -> None:
+    # Our token-bucket estimate says the primary is busy for 30s, and the backup then fails:
+    # the estimate may be pessimistic, so try the primary rather than degrade the turn.
+    primary = FakeLlm([Reply("primary after all")], model="p")
+    primary.budget_wait_s = lambda tokens: 30.0  # type: ignore[attr-defined]
+    backup = FakeLlm([err(LlmErrorKind.UNAVAILABLE)], model="b")
+    clock = Clock()
+    items = await run(router(primary, backup, clock=clock))
+    assert [i.error.model for i in items if isinstance(i, AttemptFailed)] == ["b"]
+    assert items[-1].text == "primary after all"
+    assert clock.slept == []  # no pointless 30s sleep
 
 
 async def test_the_final_failure_is_raised_not_announced_as_a_fallback() -> None:

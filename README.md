@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 5 - live voice.** The full architecture write-up and trade-offs land
+> Status: **Phase 6 - observability.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -151,8 +151,10 @@ calls of ~1.5-2.5k tokens each. `llm/router.py` treats the chain as a pool:
   failed attempt shows up in the trace as a failed LLM step. A connection that never opened is
   retried once first (nothing was sent, so it is always safe).
 * **Shared cooldowns.** Quotas are per API key, so one session's 429 spares every other session.
-* **Wait or fail fast.** If every model is busy for up to 12s the router waits; otherwise the
-  turn ends with an error carrying `retry_after_s`.
+* **Wait or fail fast.** If every model has been tried and they were only rate-limited, the
+  router waits once for the soonest one (up to 12s) rather than failing the turn. A model held
+  back only by our *estimate* of its token bucket is still tried before giving up. Otherwise
+  the turn ends with an error carrying `retry_after_s`.
 * **Never splice answers.** Once tokens have reached the user, a failure ends the turn honestly
   instead of continuing in a different model's voice.
 
@@ -263,6 +265,32 @@ and trace. The cost is latency: about 1s of transcription plus the agent's time 
 * **Guardrails on audio.** Whisper invents words in silence ("Thank you."), so segments it marks
   as likely non-speech are dropped. Both audio endpoints require a live session (they are not an
   open proxy), are size-capped, and keep the API key server-side.
+
+## Observability
+
+The **Observability** drawer (header button, or *trace* under any reply) answers "what did the
+agent do, how long did it take, and what did it cost":
+
+* **This conversation.** Stat tiles (turns, p50/p95 latency, time to first token, tokens, cost),
+  a latency-per-turn chart (click a bar to inspect that turn), and for each turn:
+  * a **waterfall** of every model call, tool and guardrail check on one time axis, with failed
+    attempts (✕), guardrail-triggered tickets, the answer's streaming window, the first-token
+    marker and, for voice, speech-to-text before the turn started;
+  * the grounding verdict (retrieval similarity, judge score, reasons);
+  * a model-call table (tokens in/out, latency, list price vs paid);
+  * the raw event stream, with a one-click JSON download.
+
+  It is built from the same events that drive the chat, so a live turn fills in as it runs and a
+  reloaded or recovered turn looks identical.
+* **Service.** `GET /api/observability/summary` aggregates every stored trace with SQL over the
+  event JSON: turns and sessions, outcomes, p50/p95 latency and time to first token, tokens, list
+  cost (and per 1,000 turns), model fallbacks, per-model and per-tool p50/p95 and error counts,
+  and guardrail activity. It returns aggregates only, never customer text. It is open for the
+  demo; set `OBSERVABILITY_TOKEN` to require a bearer token.
+
+Cost is shown twice on purpose: **list price** (what the traffic would cost on paid tiers, for
+capacity planning) and **paid** ($0 on free tiers). Chart colors are a validated colorblind-safe
+categorical set; every bar is also labelled, so color is never the only cue.
 
 ## Local development
 

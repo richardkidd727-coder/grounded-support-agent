@@ -3,6 +3,17 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Observability charts. Categorical slots 1-3 of the validated data-viz palette (all-pairs
+     CVD-safe in both modes; aqua is < 3:1 on white, so every bar is also direct-labelled).
+     Failures use the reserved status "critical" step, always with a ✕ and a label. */
+  --viz-llm: #2a78d6;
+  --viz-tool: #eb6834;
+  --viz-guardrail: #1baf7a;
+  --viz-stt: #898781;
+  --viz-critical: #d03b3b;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
 }
 
 @theme inline {
@@ -16,6 +27,14 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --viz-llm: #3987e5;
+    --viz-tool: #d95926;
+    --viz-guardrail: #199e70;
+    --viz-stt: #898781;
+    --viz-critical: #d03b3b;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
   }
 }
 

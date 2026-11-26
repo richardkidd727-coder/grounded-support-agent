@@ -17,7 +17,7 @@ from typing import Final
 
 from support_agent.agent.orchestrator import Agent, TurnInput
 from support_agent.agent.store import SessionStore
-from support_agent.events.schema import AgentEvent, Mode
+from support_agent.events.schema import AgentEvent, Mode, VoiceInput
 from support_agent.logs import get_logger
 from support_agent.tools.base import utcnow
 from support_agent.tools.chaos import ChaosPlan
@@ -50,6 +50,7 @@ class TurnRunner:
         mode: Mode = "chat",
         chaos: ChaosPlan | None = None,
         interrupted_after: str | None = None,
+        voice_input: VoiceInput | None = None,
         heartbeat_s: float = 15.0,
     ) -> AsyncIterator[AgentEvent | None]:
         """Start a turn. Raises `SessionNotFound` / `SessionBusy` before anything streams.
@@ -77,6 +78,7 @@ class TurnRunner:
             auth=state.auth,
             chaos=chaos,
             interrupted_after=interrupted_after,
+            voice_input=voice_input,
         )
         task = asyncio.create_task(self._run(turn, queue, lock), name=f"turn:{turn.turn_id}")
         self._tasks.add(task)
