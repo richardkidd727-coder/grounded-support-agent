@@ -20,3 +20,12 @@ def test_neon_style_url_is_translated() -> None:
 def test_postgres_scheme_alias_and_other_params_kept() -> None:
     url, _ = to_asyncpg_url("postgres://u:p@h/db?application_name=agent")
     assert url == "postgresql+asyncpg://u:p@h/db?application_name=agent"
+
+
+def test_neon_pooler_disables_the_statement_cache() -> None:
+    _, args = to_asyncpg_url("postgresql://u:p@ep-x-pooler.eu-central-1.aws.neon.tech/db")
+    assert args["statement_cache_size"] == 0
+    names = {args["prepared_statement_name_func"]() for _ in range(3)}
+    assert len(names) == 3  # unique per statement: no collisions across pooled backends
+    _, direct = to_asyncpg_url("postgresql://u:p@ep-x.eu-central-1.aws.neon.tech/db")
+    assert "statement_cache_size" not in direct

@@ -21,8 +21,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg  # type: ignore[import-untyped]
 import uvicorn
-from alembic import command
-from alembic.config import Config
 
 E2E_DB = "support_e2e"
 
@@ -62,7 +60,7 @@ def main() -> None:
     parser.add_argument("--web-origin", default="http://localhost:3100")
     args = parser.parse_args()
 
-    from support_agent.config import API_ROOT, get_settings  # after env is set below
+    from support_agent.config import get_settings  # after env is set below
 
     base = os.environ.get("E2E_DATABASE_URL") or _with_db(get_settings().database_url, E2E_DB)
     os.environ.update({**E2E_ENV, "DATABASE_URL": base, "CORS_ORIGINS": args.web_origin})
@@ -70,16 +68,10 @@ def main() -> None:
     settings = get_settings()
 
     asyncio.run(_ensure_database(settings.database_url))
-    cfg = Config(str(API_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", settings.database_url)
-    command.upgrade(cfg, "head")
-
-    from support_agent.cli.ingest import _run as ingest
-    from support_agent.cli.seed import _run as seed
+    from support_agent.cli.serve import prepare
     from support_agent.main import create_app
 
-    asyncio.run(ingest(force=False))
-    print(f"e2e: seeded {asyncio.run(seed())} customers; serving on :{args.port}", flush=True)
+    print(f"e2e: seeded {prepare(settings)} customers; serving on :{args.port}", flush=True)
     uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, log_level="warning")
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import ssl
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -37,8 +38,18 @@ def to_asyncpg_url(raw_url: str) -> tuple[str, dict[str, Any]]:
     for key in _LIBPQ_ONLY_PARAMS:
         query.pop(key, None)
 
+    if "-pooler." in (parts.hostname or ""):
+        # Neon's pooled endpoint is PgBouncer in transaction mode: a backend can change between
+        # statements, so asyncpg's cached named statements would collide. Disable the cache and
+        # give each prepared statement a unique name. (The direct endpoint needs neither.)
+        connect_args["statement_cache_size"] = 0
+        connect_args["prepared_statement_name_func"] = _unique_statement_name
     url = urlunsplit((scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
     return url, connect_args
+
+
+def _unique_statement_name() -> str:
+    return f"__asyncpg_{uuid4().hex}__"
 
 
 class Database:
