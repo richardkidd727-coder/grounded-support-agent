@@ -26,6 +26,7 @@ from support_agent.agent.runner import SessionBusy, TurnRunner
 from support_agent.agent.store import SESSION_ID_PATTERN, SessionNotFound
 from support_agent.config import Settings
 from support_agent.events.schema import AgentEvent, AgentEventAdapter, Mode, VoiceInput
+from support_agent.protection import check_new_session, check_turn
 from support_agent.tools.chaos import ChaosPlan, ChaosPlanError
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -94,6 +95,7 @@ def _runner(request: Request) -> TurnRunner:
 
 @router.post("/sessions", status_code=status.HTTP_201_CREATED)
 async def create_session(request: Request) -> SessionCreated:
+    check_new_session(request)
     return SessionCreated(session_id=await _runner(request).store.create())
 
 
@@ -163,6 +165,7 @@ async def chat_stream(
         except ChaosPlanError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"bad chaos plan: {exc}") from None
 
+    check_turn(request, body.session_id)
     try:
         events = await runner.start(
             body.session_id,

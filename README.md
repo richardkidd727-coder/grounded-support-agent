@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 6 - observability.** The full architecture write-up and trade-offs land
+> Status: **Phase 7 - hardening & end-to-end tests.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -292,6 +292,94 @@ Cost is shown twice on purpose: **list price** (what the traffic would cost on p
 capacity planning) and **paid** ($0 on free tiers). Chart colors are a validated colorblind-safe
 categorical set; every bar is also labelled, so color is never the only cue.
 
+## Hardening
+
+**Prompt injection: the model is not trusted.** Two layers, each tested separately:
+
+* *If the model is fooled, code still holds.* `tests/test_guarantees.py` plays a compromised
+  model that does what an attacker asks: refund $500, refund another customer's invoice, pass
+  `customer_id` or `tier` as arguments, change the login email, act before verification. Each
+  attempt is stopped by schemas, session identity, the policy engine or the database, and the
+  test asserts nothing reached the database.
+* *How often the real model is fooled.* `uv run eval-adversarial` runs seven attacks against the
+  live models: admin-mode override, impersonation, system-prompt extraction, login-email
+  takeover, card brute force, off-topic tasks, and fishing for another tier's limits. It checks
+  the outcomes against the database. Result:
+  [`eval/results/adversarial.md`](apps/api/eval/results/adversarial.md), **7/7 held**.
+
+  That eval found one real bug. Asked to escalate, the model said *"Ticket ID: INC-20231126-0012"*
+  without opening a ticket, and did it again on a rerun. The **output guard**
+  (`agent/output_guard.py`) now checks every final reply: a ticket reference that no tool
+  produced makes the orchestrator open a real ticket (visible as an `output_guard` step) and
+  append a correction with the real id. The reply has already streamed, so it is corrected
+  rather than silently rewritten.
+
+**Abuse limits** (`protection.py`, in-memory token buckets for a single instance; Redis with the
+same interface if scaled out). All limits answer 429 with `Retry-After`, which the UI shows as a
+countdown:
+
+| Limit | Default |
+|---|---|
+| New conversations per client IP | 10 / min |
+| Agent turns per conversation | 20 / min (burst 5) |
+| Agent turns per client IP | 60 / min |
+| Voice requests per conversation (transcription incl. captions, speech) | 120 / min |
+| Turns per conversation (lifetime) | 200 |
+| Processed audio per conversation | 30 min |
+| Message length / audio upload | 2,000 chars / 4 MB |
+
+**HTTP hardening.**
+
+* **Web:** CSP (`connect-src` limited to this app and its API, `frame-ancestors 'none'`, no nonces
+  so the page stays statically prerendered) and a Permissions-Policy that grants the microphone
+  to this site only.
+* **API:** `nosniff`, `X-Frame-Options`, a restrictive CSP, `Cache-Control: no-store` on every
+  `/api` response, and HSTS in production.
+* **CORS:** an explicit header allow-list instead of `*`.
+* **Request ids:** a client-supplied `X-Request-ID` is only trusted if it is short and plain,
+  because it is written into every log line.
+* **Errors:** a database outage returns a retryable `503` with `Retry-After`; an unexpected error
+  returns `500` with a request id to quote, and never a stack trace.
+
+**Failure drills.** Covered by tests and checked in the browser:
+
+* model rate-limited → backup model;
+* every model down → an honest degraded reply with Retry;
+* tool failing → retried, then the agent says so;
+* database down → 503;
+* browser disconnects mid-turn → the turn finishes and is recovered;
+* 8 concurrent sessions → no crosstalk.
+
+`uv run load-smoke` against the E2E server (scripted models) ran 25 concurrent conversations of 4
+turns each: **100/100 turns OK, p50 1.1s, p95 1.9s, ~20 turns/s on a laptop**. Most of that time
+is the scripted model's deliberate word-by-word streaming and real embedding.
+
+## End-to-end tests
+
+`npm run e2e` (Playwright, also a CI job) runs the production web build against the real API,
+Postgres, tools, policy engine, RAG with real embeddings, and guardrails. Only the models and
+speech are replaced:
+
+* `AGENT_LLM_CHAIN=fake:...` swaps in a deterministic scripted model that issues real tool calls.
+* `VOICE_BACKEND=fake` swaps in a speech backend that transcribes by pitch and speaks with tones.
+
+So the suite is offline, free and repeatable. `uv run e2e-server` uses its own `support_e2e`
+database. The 11 tests cover:
+
+* a verified refund and its trace waterfall;
+* the policy engine refusing a further refund;
+* a grounded answer with sources, and a guardrail escalation (ticket opened by code);
+* model fallback;
+* an all-models-down degraded reply, then retry;
+* a failing tool;
+* reload restore;
+* voice through a WAV file as the microphone: a transcribed turn, a spoken reply, barge-in and
+  the interruption badge;
+* the phone layout;
+* the security headers.
+
+Locally it drives the installed Edge (no browser download); CI uses Chromium.
+
 ## Local development
 
 Prerequisites: Docker, Node 24+, [uv](https://docs.astral.sh/uv/).
@@ -316,5 +404,6 @@ Checks (same as CI):
 ```bash
 cd apps/api && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 npm run lint && npm run typecheck && npm run test:web && npm run build:web
+npm run e2e                     # browser suite (starts its own API + web build)
 npm run gen:types && git diff --exit-code packages/shared-types
 ```

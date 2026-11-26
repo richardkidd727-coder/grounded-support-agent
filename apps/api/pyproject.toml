@@ -24,6 +24,9 @@ ingest = "support_agent.cli.ingest:main"
 eval-retrieval = "support_agent.cli.eval_retrieval:main"
 seed = "support_agent.cli.seed:main"
 agent-chat = "support_agent.cli.chat:main"
+e2e-server = "support_agent.cli.e2e_server:main"
+eval-adversarial = "support_agent.cli.eval_adversarial:main"
+load-smoke = "support_agent.cli.load_smoke:main"
 
 [build-system]
 requires = ["hatchling"]

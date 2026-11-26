@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from support_agent.config import Settings
 from support_agent.crm.personas import PERSONAS
+from support_agent.crm.seed import seed_personas
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
 
@@ -45,3 +46,16 @@ class DemoConfig(BaseModel):
 async def config(request: Request) -> DemoConfig:
     settings: Settings = request.app.state.settings
     return DemoConfig(chaos_enabled=settings.chaos_enabled)
+
+
+class ResetResult(BaseModel):
+    customers: int
+
+
+@router.post("/reset")
+async def reset(request: Request) -> ResetResult:
+    """Restore the demo customers (e.g. Alice's refundable invoice) for another run-through.
+
+    Only the fake CRM is reset; conversations and traces are kept.
+    """
+    return ResetResult(customers=await seed_personas(request.app.state.db))

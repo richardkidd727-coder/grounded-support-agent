@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     groq_tts_model: str = "canopylabs/orpheus-v1-english"
     groq_tts_voice: str = "troy"
     voice_max_audio_bytes: int = 4_000_000  # ~2 minutes of 16 kHz mono WAV
+    # "fake": offline speech backend for E2E tests (pitch-keyed transcripts, tone TTS).
+    voice_backend: Literal["groq", "fake"] = "groq"
+    fake_stt_phrases: str = "What is your refund policy?|Actually, how do I export my data?"
 
     # --- agent -------------------------------------------------------------------
     agent_max_steps: int = 8  # model calls per turn before giving up (loop guard)
@@ -77,7 +80,12 @@ class Settings(BaseSettings):
     retrieval_accept_above: float = 0.70
 
     # --- protection --------------------------------------------------------------
-    rate_limit_per_minute: int = 20
+    rate_limit_per_minute: int = 20  # agent turns per session
+    ip_turns_per_minute: int = 60  # agent turns per client IP, across sessions
+    ip_sessions_per_minute: int = 10  # new conversations per client IP
+    voice_requests_per_minute: int = 120  # transcriptions (incl. live captions) + speech
+    session_max_turns: int = 200
+    session_max_audio_s: float = 1800  # processed audio per session (captions re-send audio)
     chaos_enabled: bool = False
     # Set to require `Authorization: Bearer <token>` on /api/observability (open in the demo).
     observability_token: SecretStr | None = None
