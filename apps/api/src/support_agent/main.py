@@ -13,7 +13,7 @@ from support_agent.agent.grounding import GroundingJudge
 from support_agent.agent.orchestrator import Agent
 from support_agent.agent.runner import TurnRunner
 from support_agent.agent.store import SessionStore
-from support_agent.api import chat, demo, health, kb
+from support_agent.api import chat, demo, health, kb, voice
 from support_agent.api.middleware import REQUEST_ID_HEADER, request_context
 from support_agent.config import Settings, get_settings
 from support_agent.db import Database
@@ -24,6 +24,7 @@ from support_agent.rag.embeddings import Embedder, FastEmbedEmbedder
 from support_agent.rag.factory import build_embedder, build_retriever
 from support_agent.tools.base import ToolDeps
 from support_agent.tools.registry import build_executor
+from support_agent.voice.groq_audio import GroqAudio
 
 log = get_logger("app")
 
@@ -35,6 +36,7 @@ def create_app(
     embedder: Embedder | None = None,
     agent_llm: LlmRouter | None = None,
     judge_llm: LlmRouter | None = None,
+    audio: GroqAudio | None = None,
 ) -> FastAPI:
     """Build the app. Dependencies can be injected (tests); otherwise built from settings."""
     settings = settings or get_settings()
@@ -63,6 +65,14 @@ def create_app(
                 settings=settings,
             ),
             SessionStore(app.state.db, ttl_hours=settings.session_ttl_hours),
+        )
+        groq_key = settings.groq_api_key.get_secret_value() if settings.groq_api_key else None
+        app.state.audio = audio or GroqAudio(
+            http,
+            groq_key or None,
+            stt_model=settings.groq_stt_model,
+            tts_model=settings.groq_tts_model,
+            tts_voice=settings.groq_tts_voice,
         )
         if not app.state.agent_llm.configured:
             log.warning("no_llm_configured", hint="set GROQ_API_KEY and/or GEMINI_API_KEY")
@@ -96,6 +106,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(kb.router)
     app.include_router(chat.router)
+    app.include_router(voice.router)
     if settings.demo_mode:
         app.include_router(demo.router)
     return app

@@ -49,6 +49,7 @@ class TurnRunner:
         *,
         mode: Mode = "chat",
         chaos: ChaosPlan | None = None,
+        interrupted_after: str | None = None,
         heartbeat_s: float = 15.0,
     ) -> AsyncIterator[AgentEvent | None]:
         """Start a turn. Raises `SessionNotFound` / `SessionBusy` before anything streams.
@@ -75,6 +76,7 @@ class TurnRunner:
             history=state.history,
             auth=state.auth,
             chaos=chaos,
+            interrupted_after=interrupted_after,
         )
         task = asyncio.create_task(self._run(turn, queue, lock), name=f"turn:{turn.turn_id}")
         self._tasks.add(task)

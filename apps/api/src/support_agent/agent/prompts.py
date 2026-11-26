@@ -40,10 +40,27 @@ Style: warm, concise, plain language. Short paragraphs; use a list only for step
 
 _VOICE_STYLE = """\
 Style: this reply will be spoken aloud. One to three short sentences. No markdown, lists, \
-symbols or URLs. Say amounts naturally ("forty-five dollars"). Ask one question at a time."""
+symbols or URLs. Say amounts naturally ("forty-five dollars"). Ask one question at a time.
+The customer's words come from speech recognition. Emails may be spoken ("alice at northpeak \
+dot example" means alice@northpeak.example) - convert them before calling tools. If a detail \
+is ambiguous, read it back and ask the customer to confirm."""
 
 
-def system_prompt(auth: SessionAuth, mode: Mode, today: date) -> str:
+def interruption_note(heard: str) -> str:
+    """Tells the model the customer cut its previous spoken reply short."""
+    heard = " ".join(heard.split())[:600]
+    if not heard:
+        return (
+            "The customer interrupted your previous reply before hearing any of it. Do not "
+            "assume they know what it said."
+        )
+    return (
+        "The customer interrupted your previous spoken reply. They only heard: "
+        f'"{heard}". Do not assume they heard the rest; repeat anything important they missed.'
+    )
+
+
+def system_prompt(auth: SessionAuth, mode: Mode, today: date, note: str | None = None) -> str:
     if auth.verified:
         tier = auth.tier.value if auth.tier else "unknown"
         identity = f"The customer is verified as {auth.customer_name} ({tier} plan)."
@@ -55,6 +72,7 @@ def system_prompt(auth: SessionAuth, mode: Mode, today: date) -> str:
         identity = "The customer is not verified yet."
     channel = "voice call" if mode == "voice" else "chat"
     style = _VOICE_STYLE if mode == "voice" else _CHAT_STYLE
-    return (
+    prompt = (
         f"{_CORE}\n{style}\n\nSession: {identity} Channel: {channel}. Today is {today.isoformat()}."
     )
+    return f"{prompt}\n{note}" if note else prompt

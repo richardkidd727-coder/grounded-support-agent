@@ -618,6 +618,18 @@
     "TurnStarted": {
       "additionalProperties": false,
       "properties": {
+        "interrupted_after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Voice barge-in: what the customer heard of the previous reply before talking over it (empty string: nothing). Null when the previous reply was not cut off."
+        },
         "mode": {
           "enum": [
             "chat",
@@ -656,7 +668,8 @@
         "ts",
         "type",
         "mode",
-        "user_text"
+        "user_text",
+        "interrupted_after"
       ],
       "title": "TurnStarted",
       "type": "object"

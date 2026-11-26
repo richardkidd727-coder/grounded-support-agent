@@ -3,7 +3,7 @@
 A full-stack support agent with streaming chat, live voice, multi-step tool orchestration,
 grounded RAG with confidence guardrails, and a real-time observability drawer.
 
-> Status: **Phase 4 - streaming chat UI.** The full architecture write-up and trade-offs land
+> Status: **Phase 5 - live voice.** The full architecture write-up and trade-offs land
 > here in Phase 8.
 
 ## Repository layout
@@ -29,7 +29,7 @@ voice and the observability drawer all consume it. TypeScript types are generate
 |---|---|
 | Agent LLM | Groq free tier: `gpt-oss-120b`, falling back to `qwen3.8-27b` (Gemini plugs in by config) |
 | Grounding judge | Groq `gpt-oss-20b` (JSON verdicts only) |
-| Voice | Gemini Live API (native audio, browser connects with an ephemeral token) |
+| Voice | Groq Whisper (speech-to-text) + Orpheus TTS, browser speech synthesis as fallback |
 | Embeddings | `fastembed` running locally (`bge-small-en-v1.5`), no key |
 | Database / vectors | Postgres + pgvector (Docker locally, Neon when deployed) |
 | Hosting | Vercel (web) + Render (API) |
@@ -224,6 +224,45 @@ state built from the agent's event stream.
 
 Model output is rendered with `react-markdown`, without raw HTML. The SSE reader is a small
 `fetch`-based parser (`lib/sse.ts`), because `EventSource` cannot POST.
+
+## Voice
+
+```
+mic --AudioWorklet (raw PCM, 400 ms pre-roll)--> VAD --> 16 kHz WAV --> /api/voice/transcribe (Whisper)
+  --> text --> /api/chat/stream  mode=voice  (same agent loop, tools, guardrails, memory)
+  --> streamed reply --> sentences --> /api/voice/speak (Orpheus) or browser speech --> speaker
+```
+
+Voice is a cascade: speech-to-text, then the agent, then text-to-speech. The alternative is a
+speech-to-speech model (Gemini Live). The cascade was chosen because Gemini's free tier was not
+available for this project, and because it buys something real: **a voice turn is an ordinary
+turn**. It goes through the same orchestrator, tool loop, grounding gate and session, so a
+customer can verify by voice and continue typing, and every voice turn appears in the transcript
+and trace. The cost is latency: about 1s of transcription plus the agent's time to first sentence.
+
+* **Turn detection.** Energy VAD in the browser (`lib/voice/vad.ts`). It learns the room's noise
+  floor for the first 500 ms, then follows it while nobody is talking, and ends an utterance after
+  850 ms of silence. People pause mid-thought: if the customer resumes before the reply starts,
+  the transcribed pieces are joined in speaking order, whichever order Whisper answers in.
+* **Live transcripts.** While the customer talks, the audio so far is re-transcribed about every
+  1.5s for live captions. This uses our own Whisper endpoint rather than the browser's speech
+  recognition, which would stream customer audio to a second vendor (Google, for Chrome). The
+  agent's reply streams as text while it is spoken.
+* **Speaking while streaming.** The reply is cut into sentences as tokens arrive, without
+  splitting "$45.00" or invoice ids. The first sentence is synthesised while the model is still
+  writing; the next one is fetched while the current one plays.
+* **Interruptions (barge-in).** Speech detected while the agent is thinking or speaking stops
+  playback immediately and drops the rest of that reply. The next turn carries `interrupted_after`
+  (what the customer actually heard), which the agent is told about and which is recorded on the
+  `turn.started` event. That event drives the *Interrupted by customer* badge and survives a
+  reload. While the agent speaks, VAD switches to a stricter threshold so the agent's own voice
+  leaking into the mic does not count as an interruption. The agent turn itself is never
+  cancelled: it may be in the middle of a refund, so it finishes in the transcript.
+* **Text-to-speech fallback.** Orpheus needs a one-time terms acceptance in the Groq console. The
+  server probes it once; until it works, the browser's own speech synthesis is used automatically.
+* **Guardrails on audio.** Whisper invents words in silence ("Thank you."), so segments it marks
+  as likely non-speech are dropped. Both audio endpoints require a live session (they are not an
+  open proxy), are size-capped, and keep the API key server-side.
 
 ## Local development
 

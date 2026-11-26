@@ -50,6 +50,8 @@ export interface TurnView {
   turnId: string | null;
   mode: Mode;
   userText: string;
+  /** Voice: this turn cut off the previous spoken reply; what the customer had heard of it. */
+  interruptedAfter: string | null;
   status: TurnStatus;
   text: string;
   steps: StepView[];
@@ -75,6 +77,7 @@ export function newTurn(key: string, userText: string, mode: Mode): TurnView {
     turnId: null,
     mode,
     userText,
+    interruptedAfter: null,
     status: "sending",
     text: "",
     steps: [],
@@ -94,7 +97,12 @@ export function applyEvent(turn: TurnView, event: AgentEvent): TurnView {
 
   switch (event.type) {
     case "turn.started":
-      return { ...next, status: "streaming", mode: event.mode };
+      return {
+        ...next,
+        status: "streaming",
+        mode: event.mode,
+        interruptedAfter: event.interrupted_after,
+      };
     case "step.started":
       return {
         ...next,

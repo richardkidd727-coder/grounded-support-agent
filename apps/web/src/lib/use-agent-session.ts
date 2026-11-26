@@ -12,6 +12,15 @@ const BOOT_GIVE_UP_MS = 90_000; // free-tier API may be cold-starting
 
 export type SessionPhase = "connecting" | "ready" | "unavailable";
 
+export interface SendOptions {
+  mode?: Mode;
+  chaos?: string | null;
+  /** Caller-chosen turn key, so the caller can follow this turn in `turns` (voice playback). */
+  key?: string;
+  /** Voice barge-in: what the customer heard of the previous reply before interrupting. */
+  interruptedAfter?: string | null;
+}
+
 function storedSessionId(): string | null {
   try {
     return window.localStorage.getItem(STORAGE_KEY);
@@ -62,6 +71,7 @@ export function useAgentSession() {
   const [notice, setNotice] = useState<string | null>(null);
   const sessionRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const inflightRef = useRef<Promise<void> | null>(null);
   const turnsRef = useRef(turns);
   useEffect(() => {
     turnsRef.current = turns;
@@ -150,14 +160,13 @@ export function useAgentSession() {
     [],
   );
 
-  const send = useCallback(
-    async (text: string, opts: { mode?: Mode; chaos?: string | null } = {}) => {
+  const sendTurn = useCallback(
+    async (text: string, opts: SendOptions, key: string) => {
       const id = sessionRef.current;
       const message = text.trim();
-      if (!id || !message || isBusy(turnsRef.current.at(-1))) return;
+      if (!id || !message) return;
       setNotice(null);
 
-      const key = crypto.randomUUID();
       const known = new Set(turnsRef.current.map((t) => t.turnId).filter((t): t is string => !!t));
       dispatch({ type: "start", key, userText: message, mode: opts.mode ?? "chat" });
 
@@ -168,7 +177,13 @@ export function useAgentSession() {
 
       try {
         for await (const event of api.streamTurn(
-          { sessionId: id, message, mode: opts.mode ?? "chat", chaos: opts.chaos },
+          {
+            sessionId: id,
+            message,
+            mode: opts.mode ?? "chat",
+            chaos: opts.chaos,
+            interruptedAfter: opts.interruptedAfter,
+          },
           controller.signal,
         )) {
           if (event.type === "turn.started") turnId = event.turn_id;
@@ -214,6 +229,26 @@ export function useAgentSession() {
     [recover, refreshCustomer],
   );
 
+  /**
+   * Send a customer message. Resolves when the turn has finished (or failed). Ignored while
+   * another turn is in flight - voice callers use `whenIdle()` first. Busy-ness is tracked by the
+   * in-flight promise, not React state, which can lag a render behind.
+   */
+  const send = useCallback(
+    (text: string, opts: SendOptions = {}): Promise<void> => {
+      if (inflightRef.current) return Promise.resolve();
+      const run = sendTurn(text, opts, opts.key ?? crypto.randomUUID());
+      inflightRef.current = run;
+      void run.finally(() => {
+        if (inflightRef.current === run) inflightRef.current = null;
+      });
+      return run;
+    },
+    [sendTurn],
+  );
+
+  const whenIdle = useCallback(() => inflightRef.current ?? Promise.resolve(), []);
+
   return {
     sessionId,
     phase,
@@ -222,6 +257,7 @@ export function useAgentSession() {
     notice,
     busy: isBusy(turns.at(-1)),
     send,
+    whenIdle,
     newConversation,
   };
 }

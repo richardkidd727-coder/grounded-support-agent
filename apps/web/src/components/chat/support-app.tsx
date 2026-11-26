@@ -6,11 +6,13 @@ import { ApiStatus } from "@/components/api-status";
 import { api } from "@/lib/api";
 import type { TurnView } from "@/lib/conversation";
 import { useAgentSession } from "@/lib/use-agent-session";
+import { useVoice } from "@/lib/use-voice";
 
 import { ChaosMenu } from "./chaos-menu";
 import { Composer } from "./composer";
 import { PersonaPanel } from "./persona-panel";
 import { TurnItem } from "./turn-item";
+import { VoicePanel } from "../voice/voice-panel";
 
 const STARTERS = [
   "What's your refund policy?",
@@ -22,13 +24,16 @@ const STARTERS = [
 const STICK_THRESHOLD_PX = 80;
 
 export function SupportApp() {
-  const { phase, turns, customer, notice, busy, send, newConversation } = useAgentSession();
+  const { sessionId, phase, turns, customer, notice, busy, send, whenIdle, newConversation } =
+    useAgentSession();
   const [draft, setDraft] = useState("");
   const [chaos, setChaos] = useState("");
   const [chaosEnabled, setChaosEnabled] = useState(false);
   const [showPersonas, setShowPersonas] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // Voice shares the session: its turns land in the same conversation and memory as typed ones.
+  const voice = useVoice({ sessionId, turns, send, whenIdle, chaos: chaos || null });
 
   useEffect(() => {
     api
@@ -92,7 +97,7 @@ export function SupportApp() {
         </button>
         <button
           type="button"
-          onClick={() => void newConversation()}
+          onClick={() => void voice.stop().then(newConversation)}
           disabled={!ready}
           className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
         >
@@ -132,8 +137,13 @@ export function SupportApp() {
                   </div>
                 </div>
               )}
-              {turns.map((turn) => (
-                <TurnItem key={turn.key} turn={turn} onRetry={retry} />
+              {turns.map((turn, i) => (
+                <TurnItem
+                  key={turn.key}
+                  turn={turn}
+                  onRetry={retry}
+                  heardBeforeInterruption={turns[i + 1]?.interruptedAfter ?? null}
+                />
               ))}
             </div>
           </div>
@@ -141,13 +151,46 @@ export function SupportApp() {
           <div className="border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
             <div className="mx-auto max-w-3xl px-4 py-3">
               {notice && <p className="mb-2 text-xs text-red-600">{notice}</p>}
-              <Composer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => submit(draft)}
-                disabled={!ready}
-                busy={busy}
-              />
+              {voice.active ? (
+                <VoicePanel
+                  state={voice.state}
+                  caption={voice.caption}
+                  error={voice.error}
+                  engine={voice.engine}
+                  sttMs={voice.sttMs}
+                  micMuted={voice.micMuted}
+                  levels={voice.levels}
+                  onInterrupt={voice.interrupt}
+                  onToggleMute={voice.toggleMute}
+                  onEnd={() => void voice.stop()}
+                />
+              ) : (
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Composer
+                      value={draft}
+                      onChange={setDraft}
+                      onSubmit={() => submit(draft)}
+                      disabled={!ready}
+                      busy={busy}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void voice.start()}
+                    disabled={!ready}
+                    title="Talk to Drift"
+                    className="mb-0.5 flex h-[50px] items-center gap-1.5 rounded-2xl border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    <span aria-hidden>🎙</span> Voice
+                  </button>
+                </div>
+              )}
+              {!voice.active && voice.error && (
+                <p role="alert" className="mt-2 text-xs text-red-600">
+                  {voice.error}
+                </p>
+              )}
               <p className="mt-1.5 text-center text-[10px] text-zinc-400">
                 Demo with fictional data. Answers come from Driftwood&apos;s policies; low-confidence
                 questions go to a human.
