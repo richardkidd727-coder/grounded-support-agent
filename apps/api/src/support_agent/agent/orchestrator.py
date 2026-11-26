@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from support_agent.agent.context import StoredMessage, window
 from support_agent.agent.grounding import GroundingJudge, GroundingVerdict
+from support_agent.agent.output_guard import invented_references
 from support_agent.agent.presentation import completed_action, preview, redact_args, summarize
 from support_agent.agent.prompts import interruption_note, system_prompt
 from support_agent.config import Settings
@@ -300,6 +301,7 @@ class Agent:
                         "that, or would you like me to pass this to a human agent?",
                     )
                     return "degraded"
+                await self._guard_references(turn, result.text)
                 return "escalated" if turn.escalated else "answered"
 
             for call in result.tool_calls:
@@ -483,6 +485,47 @@ class Agent:
                     priority=outcome.output["priority"],
                 )
         return payload
+
+    async def _guard_references(self, turn: _Turn, reply: str) -> None:
+        """Output guard: a ticket id that no tool produced was invented - make it true.
+
+        The reply has already streamed, so it can't be unsaid; instead a real ticket is opened
+        (visible as an `output_guard` step) and an explicit correction is appended. The customer
+        ends up with a reference that exists, and the trace shows exactly what happened.
+        """
+        evidence = [m.content for m in turn.convo[:-1]]  # tools, history, what the customer said
+        invented = invented_references(reply, evidence)
+        if not invented:
+            return
+        log.warning("invented_reference", refs=invented, session_id=turn.inp.session_id)
+        if turn.ticket is None:
+            await self._execute(
+                turn,
+                "create_escalation_ticket",
+                {
+                    "summary": (
+                        f"Agent promised a ticket without opening one. Customer: "
+                        f"{turn.inp.user_text}"
+                    )[:1000],
+                    "category": "other",
+                    "priority": "normal",
+                    "attempted_steps": [f"Reply cited {', '.join(invented)} (no such ticket)"],
+                },
+                triggered_by="output_guard",
+            )
+        if turn.ticket is None:  # even opening a real one failed: at least retract the claim
+            await self._say(
+                turn,
+                f"Correction: {', '.join(invented)} is not a valid reference and no ticket has "
+                "been opened yet. Please ask me again, or contact support directly.",
+            )
+            return
+        await self._say(
+            turn,
+            f"Correction: {', '.join(invented)} is not a valid reference. Your ticket number is "
+            f"{turn.ticket['ticket_id']} - expect a reply "
+            f"{turn.ticket['expected_first_response']}.",
+        )
 
     async def _escalate_ungrounded(self, turn: _Turn, query: str, reasons: list[str]) -> None:
         """The low-confidence path, enforced in code rather than left to the model.

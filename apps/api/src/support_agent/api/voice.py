@@ -15,12 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from support_agent.agent.runner import TurnRunner
 from support_agent.agent.store import SESSION_ID_PATTERN
 from support_agent.config import Settings
-from support_agent.voice.groq_audio import AudioError, AudioErrorKind, GroqAudio
+from support_agent.protection import check_voice
+from support_agent.voice.backend import SpeechBackend
+from support_agent.voice.groq_audio import AudioError, AudioErrorKind
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
 ACCEPTED_AUDIO = frozenset({"audio/wav", "audio/x-wav", "audio/wave", "audio/webm", "audio/ogg"})
 MIN_AUDIO_BYTES = 1_000  # a WAV header plus a few ms; anything smaller is not an utterance
+BYTES_PER_AUDIO_SECOND = 32_000  # 16 kHz mono 16-bit, what the browser sends
 
 
 class VoiceConfig(BaseModel):
@@ -43,8 +46,8 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
 
 
-def _audio(request: Request) -> GroqAudio:
-    audio: GroqAudio = request.app.state.audio
+def _audio(request: Request) -> SpeechBackend:
+    audio: SpeechBackend = request.app.state.audio
     return audio
 
 
@@ -107,6 +110,7 @@ async def transcribe(
         chunks.append(chunk)
     if size < MIN_AUDIO_BYTES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "no audio received")
+    check_voice(request, session_id, audio_s=size / BYTES_PER_AUDIO_SECOND)
 
     try:
         result = await _audio(request).transcribe(b"".join(chunks), media_type)
@@ -131,6 +135,7 @@ async def transcribe(
 async def speak(request: Request, body: SpeakRequest) -> Response:
     """One sentence of the reply -> WAV audio."""
     await _require_session(request, body.session_id)
+    check_voice(request, body.session_id)
     try:
         audio = await _audio(request).synthesize(body.text)
     except AudioError as exc:
