@@ -40,6 +40,20 @@ export interface TurnTrace {
   events: AgentEvent[];
 }
 
+export interface VoiceConfig {
+  stt: boolean;
+  tts: "server" | "browser";
+  stt_model: string;
+  tts_voice: string | null;
+}
+
+export interface Transcript {
+  text: string;
+  language: string | null;
+  duration_s: number;
+  latency_ms: number;
+}
+
 export interface SessionView {
   session_id: string;
   created_at: string;
@@ -97,12 +111,41 @@ export const api = {
 
   demoConfig: () => request<DemoConfig>("/api/demo/config"),
 
+  voiceConfig: () => request<VoiceConfig>("/api/voice/config"),
+
+  /** One utterance (16 kHz WAV) -> text. Empty text means no speech was detected. */
+  transcribe: (sessionId: string, wav: ArrayBuffer, signal?: AbortSignal) =>
+    request<Transcript>(`/api/voice/transcribe?session_id=${encodeURIComponent(sessionId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "audio/wav" },
+      body: wav,
+      signal,
+    }),
+
+  /** One sentence -> WAV. Throws ApiError(503) when server TTS is unavailable. */
+  async speak(sessionId: string, text: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+    const res = await fetch(`${API_URL}/api/voice/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, text }),
+      signal,
+    });
+    if (!res.ok) throw await toApiError(res);
+    return res.arrayBuffer();
+  },
+
   /**
    * Send one customer message and yield the turn's events as they arrive.
    * Throws ApiError for 4xx/5xx before the stream starts (404 expired, 409 busy, ...).
    */
   async *streamTurn(
-    args: { sessionId: string; message: string; mode: Mode; chaos?: string | null },
+    args: {
+      sessionId: string;
+      message: string;
+      mode: Mode;
+      chaos?: string | null;
+      interruptedAfter?: string | null;
+    },
     signal?: AbortSignal,
   ): AsyncGenerator<AgentEvent> {
     const headers: Record<string, string> = {
@@ -113,7 +156,12 @@ export const api = {
     const res = await fetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ session_id: args.sessionId, message: args.message, mode: args.mode }),
+      body: JSON.stringify({
+        session_id: args.sessionId,
+        message: args.message,
+        mode: args.mode,
+        ...(args.interruptedAfter != null ? { interrupted_after: args.interruptedAfter } : {}),
+      }),
       signal,
     });
     if (!res.ok || !res.body) throw await toApiError(res);

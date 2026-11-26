@@ -110,6 +110,16 @@ class SessionStore:
             )
         return session_id
 
+    async def exists(self, session_id: str) -> bool:
+        """Cheap liveness check (no history load) for endpoints that only need a valid session."""
+        async with self._db.engine.connect() as conn:
+            updated_at = (
+                await conn.execute(
+                    text("SELECT updated_at FROM chat_sessions WHERE id = :id"), {"id": session_id}
+                )
+            ).scalar_one_or_none()
+        return updated_at is not None and updated_at >= self._clock() - self._ttl
+
     async def load(self, session_id: str, *, history_limit: int = HISTORY_LIMIT) -> SessionState:
         async with self._db.engine.connect() as conn:
             row = (

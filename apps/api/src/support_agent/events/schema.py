@@ -77,6 +77,11 @@ class TurnStarted(_Event):
     type: Literal["turn.started"] = "turn.started"
     mode: Mode
     user_text: str
+    interrupted_after: str | None = Field(
+        default=None,
+        description="Voice barge-in: what the customer heard of the previous reply before "
+        "talking over it (empty string: nothing). Null when the previous reply was not cut off.",
+    )
 
 
 class StepStarted(_Event):

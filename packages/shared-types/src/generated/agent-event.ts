@@ -21,6 +21,10 @@ export type ErrorCode =
   | "internal";
 
 export interface TurnStarted {
+  /**
+   * Voice barge-in: what the customer heard of the previous reply before talking over it (empty string: nothing). Null when the previous reply was not cut off.
+   */
+  interrupted_after: string | null;
   mode: "chat" | "voice";
   /**
    * Monotonic per turn; lets clients detect gaps/reorders.

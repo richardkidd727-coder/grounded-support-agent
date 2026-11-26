@@ -55,7 +55,7 @@ function RetryButton({ retryAfterS, onRetry }: { retryAfterS: number | null; onR
   );
 }
 
-function Badges({ turn }: { turn: TurnView }) {
+function Badges({ turn, heard }: { turn: TurnView; heard: string | null }) {
   const guard = turn.guardrails.at(-1);
   return (
     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
@@ -75,6 +75,18 @@ function Badges({ turn }: { turn: TurnView }) {
             Low confidence · {Math.round(guard.confidence * 100)}% → human
           </span>
         ))}
+      {heard !== null && (
+        <span
+          title={
+            heard
+              ? `Customer talked over this reply after hearing: "${heard}". The agent was told.`
+              : "Customer talked over this reply before hearing any of it. The agent was told."
+          }
+          className="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-900"
+        >
+          Interrupted by customer
+        </span>
+      )}
       {turn.outcome === "degraded" && (
         <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700">
           Degraded reply
@@ -135,7 +147,16 @@ function Meta({ turn }: { turn: TurnView }) {
   );
 }
 
-export function TurnItem({ turn, onRetry }: { turn: TurnView; onRetry: (turn: TurnView) => void }) {
+export function TurnItem({
+  turn,
+  onRetry,
+  heardBeforeInterruption = null,
+}: {
+  turn: TurnView;
+  onRetry: (turn: TurnView) => void;
+  /** Set when the next (voice) turn cut this reply off: what the customer had heard. */
+  heardBeforeInterruption?: string | null;
+}) {
   const streaming = turn.status === "streaming" || turn.status === "sending";
   return (
     <div className="space-y-3">
@@ -170,7 +191,7 @@ export function TurnItem({ turn, onRetry }: { turn: TurnView; onRetry: (turn: Tu
             </div>
           )}
           <EscalationCard turn={turn} />
-          <Badges turn={turn} />
+          <Badges turn={turn} heard={heardBeforeInterruption} />
           <Sources turn={turn} />
           <Meta turn={turn} />
         </div>

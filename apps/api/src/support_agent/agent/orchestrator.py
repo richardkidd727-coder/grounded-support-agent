@@ -28,7 +28,7 @@ from typing import Any, Literal
 from support_agent.agent.context import StoredMessage, window
 from support_agent.agent.grounding import GroundingJudge, GroundingVerdict
 from support_agent.agent.presentation import completed_action, preview, redact_args, summarize
-from support_agent.agent.prompts import system_prompt
+from support_agent.agent.prompts import interruption_note, system_prompt
 from support_agent.config import Settings
 from support_agent.events.schema import (
     AgentEvent,
@@ -101,6 +101,7 @@ class TurnInput:
     history: list[StoredMessage]
     auth: SessionAuth  # mutated in place by verify_identity; the caller persists it
     chaos: ChaosPlan | None = None
+    interrupted_after: str | None = None  # voice barge-in: what was heard of the last reply
 
 
 @dataclass(slots=True)
@@ -191,7 +192,10 @@ class Agent:
     async def run_turn(self, inp: TurnInput, sink: Sink) -> TurnOutput:
         emit = _Emitter(inp.session_id, inp.turn_id, sink, self._clock)
         user = ChatMessage("user", inp.user_text)
-        system = system_prompt(inp.auth, inp.mode, self._clock().date())
+        note = (
+            interruption_note(inp.interrupted_after) if inp.interrupted_after is not None else None
+        )
+        system = system_prompt(inp.auth, inp.mode, self._clock().date(), note)
         turn = _Turn(
             inp=inp,
             emit=emit,
@@ -210,7 +214,12 @@ class Agent:
             ],
             messages=[user],
         )
-        await emit(TurnStarted, mode=inp.mode, user_text=inp.user_text)
+        await emit(
+            TurnStarted,
+            mode=inp.mode,
+            user_text=inp.user_text,
+            interrupted_after=inp.interrupted_after,
+        )
         try:
             outcome = await self._loop(turn)
         except Exception:  # last line of defence: a bug must not leave the stream hanging

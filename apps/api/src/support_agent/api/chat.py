@@ -45,6 +45,8 @@ class ChatRequest(_Body):
     session_id: str = Field(pattern=SESSION_ID_PATTERN)
     message: str = Field(min_length=1, max_length=2000)
     mode: Mode = "chat"
+    # Voice barge-in: what the customer actually heard of the previous reply before cutting in.
+    interrupted_after: str | None = Field(default=None, max_length=4000)
 
 
 class TranscriptMessage(BaseModel):
@@ -161,7 +163,13 @@ async def chat_stream(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"bad chaos plan: {exc}") from None
 
     try:
-        events = await runner.start(body.session_id, body.message, mode=body.mode, chaos=chaos)
+        events = await runner.start(
+            body.session_id,
+            body.message,
+            mode=body.mode,
+            chaos=chaos,
+            interrupted_after=body.interrupted_after,
+        )
     except SessionNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found or expired") from None
     except SessionBusy:

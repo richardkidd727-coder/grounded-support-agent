@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     # the tool. Small models are fine for narrow JSON verdicts, not for multi-step tool use.
     agent_llm_chain: str = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b"
     judge_llm_chain: str = "groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b"
-    gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     llm_read_timeout_s: float = 20.0  # max silence between streamed chunks (incl. first token)
     llm_total_timeout_s: float = 45.0  # one model call, end to end
     # Wait up to this long for a rate-limited model to free up, else fail fast with Retry-After.
@@ -47,6 +46,14 @@ class Settings(BaseSettings):
     llm_max_cooldown_wait_s: float = 12.0
     # Free tiers bill nothing; metrics still report cost at list price for capacity planning.
     llm_billing: Literal["free", "paid"] = "free"
+
+    # --- voice (Groq audio; same key) ---------------------------------------------
+    groq_stt_model: str = "whisper-large-v3-turbo"
+    # Orpheus needs a one-time terms acceptance in the Groq console; until then the browser's
+    # own speech synthesis is used automatically.
+    groq_tts_model: str = "canopylabs/orpheus-v1-english"
+    groq_tts_voice: str = "troy"
+    voice_max_audio_bytes: int = 4_000_000  # ~2 minutes of 16 kHz mono WAV
 
     # --- agent -------------------------------------------------------------------
     agent_max_steps: int = 8  # model calls per turn before giving up (loop guard)
