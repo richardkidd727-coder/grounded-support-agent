@@ -129,6 +129,8 @@ class Smoke:
         # Entries after the forged one were appended by the host's proxies; the first of them
         # (written by the outermost proxy) is the real client, i.e. chain[-appended].
         appended = len(chain) - chain.index(FORGED_IP) - 1 if FORGED_IP in chain else len(chain)
+        if appended == 0 and seen["trusted_proxy_hops"] == 0 and resolved != FORGED_IP:
+            return True, f"no proxy in front (local run): forged header ignored, peer {resolved}"
         ok = resolved != FORGED_IP and public and seen["trusted_proxy_hops"] == appended
         hint = "" if ok else f" - set TRUSTED_PROXY_HOPS={appended} (proxies appended {appended})"
         return ok, (

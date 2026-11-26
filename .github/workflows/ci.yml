@@ -32,7 +32,7 @@ jobs:
       REQUIRE_DB_TESTS: "1" # integration tests must run in CI, never silently skip
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0 # no floating major tags after v7: pin exact
         with:
           version: "0.13.1"
           enable-cache: true
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0 # no floating major tags after v7: pin exact
         with:
           version: "0.13.1"
           enable-cache: true
@@ -101,7 +101,7 @@ jobs:
       DATABASE_URL: postgresql://support:support@localhost:5432/support
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0 # no floating major tags after v7: pin exact
         with:
           version: "0.13.1"
           enable-cache: true
